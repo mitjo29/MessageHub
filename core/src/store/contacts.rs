@@ -1,7 +1,7 @@
 use rusqlite::params;
 use uuid::Uuid;
 
-use crate::error::Result;
+use crate::error::{CoreError, Result};
 use crate::store::Store;
 use crate::types::*;
 
@@ -33,6 +33,78 @@ impl Store {
             ],
         )?;
         Ok(())
+    }
+
+    pub fn get_contact(&self, id: &Uuid) -> Result<Contact> {
+        let id_str = id.to_string();
+        let (display_name, vault_ref, created_at_str, updated_at_str): (String, Option<String>, String, String) =
+            self.conn().query_row(
+                "SELECT display_name, vault_ref, created_at, updated_at FROM contacts WHERE id = ?1",
+                [&id_str],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            ).map_err(|_| CoreError::NotFound { entity: "contact".into(), id: id_str.clone() })?;
+
+        let identities = self.get_identities(id)?;
+
+        Ok(Contact {
+            id: *id,
+            display_name,
+            identities,
+            vault_ref,
+            created_at: chrono::DateTime::parse_from_rfc3339(&created_at_str)
+                .map_err(|e| CoreError::InvalidInput(e.to_string()))?
+                .with_timezone(&chrono::Utc),
+            updated_at: chrono::DateTime::parse_from_rfc3339(&updated_at_str)
+                .map_err(|e| CoreError::InvalidInput(e.to_string()))?
+                .with_timezone(&chrono::Utc),
+        })
+    }
+
+    pub fn find_contact_by_address(&self, channel: Channel, address: &str) -> Result<Option<Contact>> {
+        let channel_str = format!("{:?}", channel);
+        let result = self.conn().query_row(
+            "SELECT contact_id FROM contact_identities WHERE channel_type = ?1 AND address = ?2",
+            params![channel_str, address],
+            |row| {
+                let id_str: String = row.get(0)?;
+                Ok(id_str)
+            },
+        );
+
+        match result {
+            Ok(id_str) => {
+                let id = Uuid::parse_str(&id_str).map_err(|e| CoreError::InvalidInput(e.to_string()))?;
+                Ok(Some(self.get_contact(&id)?))
+            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(CoreError::Database(e)),
+        }
+    }
+
+    fn get_identities(&self, contact_id: &Uuid) -> Result<Vec<ContactIdentity>> {
+        let mut stmt = self.conn().prepare(
+            "SELECT channel_type, address FROM contact_identities WHERE contact_id = ?1"
+        )?;
+        let identities = stmt
+            .query_map([contact_id.to_string()], |row| {
+                let channel_str: String = row.get(0)?;
+                let address: String = row.get(1)?;
+                Ok((channel_str, address))
+            })?
+            .filter_map(|r| r.ok())
+            .map(|(ch, addr)| {
+                let channel = match ch.as_str() {
+                    "Email" => Channel::Email,
+                    "Sms" => Channel::Sms,
+                    "WhatsApp" => Channel::WhatsApp,
+                    "Teams" => Channel::Teams,
+                    "Telegram" => Channel::Telegram,
+                    _ => Channel::Email,
+                };
+                ContactIdentity { channel, address: addr }
+            })
+            .collect();
+        Ok(identities)
     }
 
     pub fn insert_thread(&self, thread: &crate::types::Thread) -> Result<()> {
