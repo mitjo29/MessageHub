@@ -7,6 +7,16 @@ use crate::types::*;
 
 impl Store {
     pub fn insert_contact(&self, contact: &Contact) -> Result<()> {
+        self.conn().execute_batch("BEGIN IMMEDIATE;")?;
+        let result = self.insert_contact_inner(contact);
+        match &result {
+            Ok(_) => self.conn().execute_batch("COMMIT;")?,
+            Err(_) => { let _ = self.conn().execute_batch("ROLLBACK;"); }
+        }
+        result
+    }
+
+    fn insert_contact_inner(&self, contact: &Contact) -> Result<()> {
         self.conn().execute(
             "INSERT INTO contacts (id, display_name, vault_ref, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![
@@ -28,7 +38,7 @@ impl Store {
             "INSERT OR IGNORE INTO contact_identities (contact_id, channel_type, address) VALUES (?1, ?2, ?3)",
             params![
                 contact_id.to_string(),
-                format!("{:?}", identity.channel),
+                identity.channel.to_db_str(),
                 identity.address,
             ],
         )?;
@@ -61,7 +71,7 @@ impl Store {
     }
 
     pub fn find_contact_by_address(&self, channel: Channel, address: &str) -> Result<Option<Contact>> {
-        let channel_str = format!("{:?}", channel);
+        let channel_str = channel.to_db_str();
         let result = self.conn().query_row(
             "SELECT contact_id FROM contact_identities WHERE channel_type = ?1 AND address = ?2",
             params![channel_str, address],
@@ -85,25 +95,21 @@ impl Store {
         let mut stmt = self.conn().prepare(
             "SELECT channel_type, address FROM contact_identities WHERE contact_id = ?1"
         )?;
-        let identities = stmt
+        let rows: Vec<(String, String)> = stmt
             .query_map([contact_id.to_string()], |row| {
                 let channel_str: String = row.get(0)?;
                 let address: String = row.get(1)?;
                 Ok((channel_str, address))
             })?
-            .filter_map(|r| r.ok())
-            .map(|(ch, addr)| {
-                let channel = match ch.as_str() {
-                    "Email" => Channel::Email,
-                    "Sms" => Channel::Sms,
-                    "WhatsApp" => Channel::WhatsApp,
-                    "Teams" => Channel::Teams,
-                    "Telegram" => Channel::Telegram,
-                    _ => Channel::Email,
-                };
-                ContactIdentity { channel, address: addr }
-            })
-            .collect();
+            .collect::<std::result::Result<Vec<_>, rusqlite::Error>>()?;
+
+        let mut identities = Vec::with_capacity(rows.len());
+        for (ch, addr) in rows {
+            let channel = Channel::from_db_str(&ch).ok_or_else(|| {
+                CoreError::InvalidInput(format!("unknown channel: {}", ch))
+            })?;
+            identities.push(ContactIdentity { channel, address: addr });
+        }
         Ok(identities)
     }
 
@@ -112,7 +118,7 @@ impl Store {
             "INSERT INTO threads (id, channel_type, subject, message_count, last_message_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 thread.id.to_string(),
-                format!("{:?}", thread.channel),
+                thread.channel.to_db_str(),
                 thread.subject,
                 thread.message_count,
                 thread.last_message_at.to_rfc3339(),

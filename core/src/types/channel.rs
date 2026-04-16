@@ -19,6 +19,27 @@ impl Channel {
             Channel::Telegram => "Telegram",
         }
     }
+
+    pub fn from_db_str(s: &str) -> Option<Self> {
+        match s {
+            "Email" => Some(Channel::Email),
+            "Sms" => Some(Channel::Sms),
+            "WhatsApp" => Some(Channel::WhatsApp),
+            "Teams" => Some(Channel::Teams),
+            "Telegram" => Some(Channel::Telegram),
+            _ => None,
+        }
+    }
+
+    pub fn to_db_str(&self) -> &'static str {
+        match self {
+            Channel::Email => "Email",
+            Channel::Sms => "Sms",
+            Channel::WhatsApp => "WhatsApp",
+            Channel::Teams => "Teams",
+            Channel::Telegram => "Telegram",
+        }
+    }
 }
 
 impl std::fmt::Display for Channel {

@@ -26,11 +26,21 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         let version = (i + 1) as i64;
         if version > current_version {
             info!(migration = name, version, "applying migration");
-            conn.execute_batch(sql)?;
-            conn.execute(
-                "INSERT INTO schema_version (version) VALUES (?1)",
-                [version],
-            )?;
+            conn.execute_batch("BEGIN;")?;
+            match (|| -> Result<()> {
+                conn.execute_batch(sql)?;
+                conn.execute(
+                    "INSERT INTO schema_version (version) VALUES (?1)",
+                    [version],
+                )?;
+                Ok(())
+            })() {
+                Ok(_) => conn.execute_batch("COMMIT;")?,
+                Err(e) => {
+                    let _ = conn.execute_batch("ROLLBACK;");
+                    return Err(e);
+                }
+            }
         }
     }
 

@@ -84,8 +84,12 @@ fn test_search_multiple_results() {
     let store = test_store();
     seed_messages(&store);
 
-    let results = store.search_messages("review OR invoice", 10).unwrap();
-    assert!(results.len() >= 2);
+    // FTS5 boolean syntax (OR) is intentionally disabled to prevent injection.
+    // Verify that individual terms each return results.
+    let review_results = store.search_messages("review", 10).unwrap();
+    assert!(!review_results.is_empty());
+    let invoice_results = store.search_messages("invoice", 10).unwrap();
+    assert!(!invoice_results.is_empty());
 }
 
 #[test]

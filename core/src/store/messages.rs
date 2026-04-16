@@ -15,7 +15,7 @@ impl Store {
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             params![
                 msg.id.to_string(),
-                format!("{:?}", msg.channel),
+                msg.channel.to_db_str(),
                 msg.thread_id.to_string(),
                 msg.sender_id.to_string(),
                 msg.content.text,
@@ -67,7 +67,7 @@ impl Store {
 
         if let Some(ch) = channel {
             sql.push_str(" AND channel_type = ?2");
-            params_vec.push(Box::new(format!("{:?}", ch)));
+            params_vec.push(Box::new(ch.to_db_str().to_owned()));
         }
 
         let limit_idx = params_vec.len() + 1;
@@ -82,11 +82,11 @@ impl Store {
         let param_refs: Vec<&dyn rusqlite::types::ToSql> =
             params_vec.iter().map(|p| p.as_ref()).collect();
         let mut stmt = self.conn().prepare(&sql)?;
-        let messages = stmt
+        let messages: Vec<Message> = stmt
             .query_map(param_refs.as_slice(), |row| Ok(row_to_message(row)))?
-            .filter_map(|r| r.ok())
-            .filter_map(|r| r.ok())
-            .collect();
+            .collect::<std::result::Result<Vec<_>, rusqlite::Error>>()?
+            .into_iter()
+            .collect::<std::result::Result<Vec<_>, CoreError>>()?;
         Ok(messages)
     }
 
@@ -105,6 +105,9 @@ impl Store {
     }
 
     pub fn search_messages(&self, query: &str, limit: u32) -> Result<Vec<Message>> {
+        // Escape double quotes and wrap in quotes for FTS5 phrase search to prevent syntax injection
+        let escaped = query.replace('"', "\"\"");
+        let fts_query = format!("\"{}\"", escaped);
         let mut stmt = self.conn().prepare(
             "SELECT m.id, m.channel_type, m.thread_id, m.sender_id, m.content_text, m.content_html, m.content_subject, m.attachments_json, m.timestamp, m.metadata_json, m.priority_score, m.category, m.is_read, m.is_archived
              FROM messages_fts fts
@@ -113,11 +116,11 @@ impl Store {
              ORDER BY rank
              LIMIT ?2",
         )?;
-        let messages = stmt
-            .query_map(params![query, limit], |row| Ok(row_to_message(row)))?
-            .filter_map(|r| r.ok())
-            .filter_map(|r| r.ok())
-            .collect();
+        let messages: Vec<Message> = stmt
+            .query_map(params![fts_query, limit], |row| Ok(row_to_message(row)))?
+            .collect::<std::result::Result<Vec<_>, rusqlite::Error>>()?
+            .into_iter()
+            .collect::<std::result::Result<Vec<_>, CoreError>>()?;
         Ok(messages)
     }
 }
@@ -138,19 +141,9 @@ fn row_to_message(row: &rusqlite::Row) -> std::result::Result<Message, CoreError
     let is_read: i32 = row.get(12).map_err(CoreError::Database)?;
     let is_archived: i32 = row.get(13).map_err(CoreError::Database)?;
 
-    let channel = match channel_str.as_str() {
-        "Email" => Channel::Email,
-        "Sms" => Channel::Sms,
-        "WhatsApp" => Channel::WhatsApp,
-        "Teams" => Channel::Teams,
-        "Telegram" => Channel::Telegram,
-        _ => {
-            return Err(CoreError::InvalidInput(format!(
-                "unknown channel: {}",
-                channel_str
-            )))
-        }
-    };
+    let channel = Channel::from_db_str(&channel_str).ok_or_else(|| {
+        CoreError::InvalidInput(format!("unknown channel: {}", channel_str))
+    })?;
 
     let attachments: Vec<Attachment> = attachments_json
         .map(|j| serde_json::from_str(&j).unwrap_or_default())

@@ -12,7 +12,7 @@ impl Store {
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 config.id.to_string(),
-                format!("{:?}", config.channel),
+                config.channel.to_db_str(),
                 config.label,
                 config.keychain_ref,
                 config.enabled as i32,
@@ -28,7 +28,7 @@ impl Store {
         let mut stmt = self.conn().prepare(
             "SELECT id, channel_type, label, keychain_ref, enabled, poll_interval_secs, last_sync_cursor, last_sync_at FROM channels"
         )?;
-        let configs = stmt
+        let rows: Vec<(String, String, String, String, i32, u32, Option<String>, Option<String>)> = stmt
             .query_map([], |row| {
                 let id_str: String = row.get(0)?;
                 let channel_str: String = row.get(1)?;
@@ -41,32 +41,30 @@ impl Store {
 
                 Ok((id_str, channel_str, label, keychain_ref, enabled, poll_interval_secs, last_sync_cursor, last_sync_at_str))
             })?
-            .filter_map(|r| r.ok())
-            .filter_map(|(id_str, channel_str, label, keychain_ref, enabled, poll_interval_secs, last_sync_cursor, last_sync_at_str)| {
-                let channel = match channel_str.as_str() {
-                    "Email" => Channel::Email,
-                    "Sms" => Channel::Sms,
-                    "WhatsApp" => Channel::WhatsApp,
-                    "Teams" => Channel::Teams,
-                    "Telegram" => Channel::Telegram,
-                    _ => return None,
-                };
-                let last_sync_at = last_sync_at_str
-                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
-                    .map(|t| t.with_timezone(&chrono::Utc));
+            .collect::<std::result::Result<Vec<_>, rusqlite::Error>>()?;
 
-                Some(ChannelConfig {
-                    id: Uuid::parse_str(&id_str).ok()?,
-                    channel,
-                    label,
-                    keychain_ref,
-                    enabled: enabled != 0,
-                    poll_interval_secs,
-                    last_sync_cursor,
-                    last_sync_at,
-                })
-            })
-            .collect();
+        let mut configs = Vec::with_capacity(rows.len());
+        for (id_str, channel_str, label, keychain_ref, enabled, poll_interval_secs, last_sync_cursor, last_sync_at_str) in rows {
+            let channel = Channel::from_db_str(&channel_str).ok_or_else(|| {
+                CoreError::InvalidInput(format!("unknown channel: {}", channel_str))
+            })?;
+            let last_sync_at = last_sync_at_str
+                .map(|s| chrono::DateTime::parse_from_rfc3339(&s)
+                    .map(|t| t.with_timezone(&chrono::Utc))
+                    .map_err(|e| CoreError::InvalidInput(e.to_string())))
+                .transpose()?;
+
+            configs.push(ChannelConfig {
+                id: Uuid::parse_str(&id_str).map_err(|e| CoreError::InvalidInput(e.to_string()))?,
+                channel,
+                label,
+                keychain_ref,
+                enabled: enabled != 0,
+                poll_interval_secs,
+                last_sync_cursor,
+                last_sync_at,
+            });
+        }
         Ok(configs)
     }
 
