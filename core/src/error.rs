@@ -16,6 +16,24 @@ pub enum CoreError {
 
     #[error("channel error: {0}")]
     Channel(String),
+
+    #[error("connection error: {0}")]
+    Connection(String),
+
+    #[error("authentication error: {0}")]
+    Auth(String),
+
+    #[error("network error: {0}")]
+    Network(String),
+
+    #[error("parse error: {0}")]
+    Parse(String),
+}
+
+impl From<reqwest::Error> for CoreError {
+    fn from(e: reqwest::Error) -> Self {
+        CoreError::Network(e.to_string())
+    }
 }
 
 pub type Result<T> = std::result::Result<T, CoreError>;
