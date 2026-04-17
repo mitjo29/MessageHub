@@ -1,3 +1,4 @@
+pub mod ai_log;
 pub mod channels;
 pub mod contacts;
 pub mod knowledge;
@@ -36,6 +37,8 @@ fn ensure_sqlite_vec_loaded() {
         }
     });
 }
+
+pub use ai_log::AiDecision;
 
 pub struct Store {
     conn: Connection,
