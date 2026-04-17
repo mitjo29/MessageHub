@@ -37,6 +37,9 @@ pub enum CoreError {
 
     #[error("knowledge engine error: {0}")]
     Knowledge(String),
+
+    #[error("ai pipeline error: {0}")]
+    Ai(String),
 }
 
 impl From<reqwest::Error> for CoreError {
