@@ -22,6 +22,7 @@ pub use classifier::{Classification, Classifier};
 pub use llm::{LlmBackend, OllamaLlm};
 pub use pipeline::AiPipeline;
 pub use profile::UserProfile;
+pub use prompts::{build_classification_user_prompt, parse_classification_response, CLASSIFICATION_SYSTEM_PROMPT};
 pub use rag::RagContext;
 
 use serde::{Deserialize, Serialize};
