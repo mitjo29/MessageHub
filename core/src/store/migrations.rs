@@ -6,6 +6,7 @@ use crate::error::Result;
 const MIGRATIONS: &[(&str, &str)] = &[
     ("001_initial", include_str!("../../migrations/001_initial.sql")),
     ("002_knowledge", include_str!("../../migrations/002_knowledge.sql")),
+    ("003_ai", include_str!("../../migrations/003_ai.sql")),
 ];
 
 pub fn run_migrations(conn: &Connection) -> Result<()> {
