@@ -1,5 +1,6 @@
 pub mod channels;
 pub mod contacts;
+pub mod knowledge;
 pub mod messages;
 mod migrations;
 
