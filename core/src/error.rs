@@ -28,6 +28,15 @@ pub enum CoreError {
 
     #[error("parse error: {0}")]
     Parse(String),
+
+    #[error("vault parse error: {0}")]
+    VaultParse(String),
+
+    #[error("embedding error: {0}")]
+    Embedding(String),
+
+    #[error("knowledge engine error: {0}")]
+    Knowledge(String),
 }
 
 impl From<reqwest::Error> for CoreError {
