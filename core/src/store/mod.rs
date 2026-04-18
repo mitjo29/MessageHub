@@ -1,5 +1,6 @@
 pub mod ai_log;
 pub mod channels;
+pub mod drafts;
 pub mod contacts;
 pub mod knowledge;
 pub mod messages;
@@ -39,6 +40,7 @@ fn ensure_sqlite_vec_loaded() {
 }
 
 pub use ai_log::AiDecision;
+pub use drafts::{DraftRecord, NewDraft};
 
 pub struct Store {
     conn: Connection,
