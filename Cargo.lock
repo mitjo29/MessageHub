@@ -1609,6 +1609,7 @@ dependencies = [
  "mail-parser",
  "notify",
  "pulldown-cmark",
+ "regex",
  "reqwest",
  "rusqlite",
  "serde",
