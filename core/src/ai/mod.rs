@@ -12,6 +12,7 @@
 //! - `pipeline` — orchestrator: classify → store → log
 
 pub mod classifier;
+pub mod cloud;
 pub mod llm;
 pub mod pipeline;
 pub mod profile;
