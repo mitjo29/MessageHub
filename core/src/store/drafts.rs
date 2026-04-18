@@ -71,29 +71,16 @@ impl Store {
                     user_edited_output, confidence, provider, model, created_at
              FROM ai_drafts
              WHERE message_id = ?1
-             ORDER BY created_at DESC, id DESC",
+             ORDER BY created_at DESC, rowid DESC",
         )?;
-        let rows: std::result::Result<Vec<DraftRecord>, rusqlite::Error> = stmt
+        let rows: Vec<DraftRecord> = stmt
             .query_map(params![message_id.to_string()], |row| {
-                let id_str: String = row.get(0)?;
-                let msg_id_str: Option<String> = row.get(1)?;
-                Ok(DraftRecord {
-                    id: Uuid::parse_str(&id_str).unwrap_or_else(|_| Uuid::nil()),
-                    message_id: msg_id_str
-                        .as_deref()
-                        .and_then(|s| Uuid::parse_str(s).ok()),
-                    action_type: row.get(2)?,
-                    input_redacted: row.get(3)?,
-                    output: row.get(4)?,
-                    user_edited_output: row.get(5)?,
-                    confidence: row.get::<_, f64>(6)? as f32,
-                    provider: row.get(7)?,
-                    model: row.get(8)?,
-                    created_at: row.get(9)?,
-                })
+                Ok(row_to_draft(row))
             })?
-            .collect();
-        rows.map_err(CoreError::Database)
+            .collect::<std::result::Result<Vec<_>, rusqlite::Error>>()?
+            .into_iter()
+            .collect::<std::result::Result<Vec<_>, CoreError>>()?;
+        Ok(rows)
     }
 
     /// Replace `user_edited_output` on an existing draft. Does not touch
@@ -112,4 +99,24 @@ impl Store {
         }
         Ok(())
     }
+}
+
+fn row_to_draft(row: &rusqlite::Row) -> std::result::Result<DraftRecord, CoreError> {
+    let id_str: String = row.get(0)?;
+    let msg_id_str: Option<String> = row.get(1)?;
+    Ok(DraftRecord {
+        id: Uuid::parse_str(&id_str).map_err(|e| CoreError::InvalidInput(e.to_string()))?,
+        message_id: msg_id_str
+            .as_deref()
+            .map(|s| Uuid::parse_str(s).map_err(|e| CoreError::InvalidInput(e.to_string())))
+            .transpose()?,
+        action_type: row.get(2)?,
+        input_redacted: row.get(3)?,
+        output: row.get(4)?,
+        user_edited_output: row.get(5)?,
+        confidence: row.get::<_, f64>(6)? as f32,
+        provider: row.get(7)?,
+        model: row.get(8)?,
+        created_at: row.get(9)?,
+    })
 }
