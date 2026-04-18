@@ -168,6 +168,11 @@ impl CloudProvider for AnthropicCloud {
                 out.push_str(&text);
             }
         }
+        if out.is_empty() {
+            return Err(CoreError::Cloud(
+                "anthropic returned no text blocks".to_string(),
+            ));
+        }
         Ok(out)
     }
 }

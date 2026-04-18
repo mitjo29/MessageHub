@@ -120,3 +120,35 @@ async fn test_anthropic_health_check_returns_false_when_unreachable() {
         .with_base_url("http://127.0.0.1:1".into());
     assert_eq!(provider.health_check().await.unwrap(), false);
 }
+
+#[tokio::test]
+async fn test_anthropic_complete_returns_error_when_content_has_no_text_blocks() {
+    let server = MockServer::start().await;
+
+    // Response is syntactically valid but contains no text blocks.
+    let body = serde_json::json!({
+        "id": "msg_01",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-sonnet-4-6",
+        "content": [
+            { "type": "tool_use", "id": "t1", "name": "calculator", "input": {} }
+        ],
+        "stop_reason": "tool_use",
+        "usage": { "input_tokens": 1, "output_tokens": 0 }
+    });
+
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(body))
+        .mount(&server)
+        .await;
+
+    let provider = AnthropicCloud::new("k".into(), "m".into()).with_base_url(server.uri());
+    let err = provider.complete("s", "u", 64).await.unwrap_err();
+    assert!(
+        format!("{}", err).to_lowercase().contains("no text"),
+        "expected 'no text' in error: {}",
+        err
+    );
+}
