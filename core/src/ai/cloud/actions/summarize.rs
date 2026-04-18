@@ -90,7 +90,7 @@ pub async fn summarize_thread(
     let raw = provider
         .complete(SYSTEM_PROMPT, &user_prompt, 512)
         .await
-        .map_err(|e| log_and_wrap(store, thread_id, &e))?;
+        .map_err(|e| log_and_wrap(store, thread_id, e))?;
 
     let parsed = match parse_response(&raw) {
         Ok(p) => p,
@@ -195,7 +195,7 @@ fn resolve_sender_address(store: &Store, msg: &Message) -> Option<String> {
         .map(|id| id.address)
 }
 
-fn log_and_wrap(store: &Store, thread_id: Uuid, err: &CoreError) -> CoreError {
+fn log_and_wrap(store: &Store, thread_id: Uuid, err: CoreError) -> CoreError {
     let _ = store.log_ai_decision(
         "summarize_thread_failed",
         "thread",
@@ -204,7 +204,7 @@ fn log_and_wrap(store: &Store, thread_id: Uuid, err: &CoreError) -> CoreError {
         0.0,
     );
     debug!(error = %err, "summarize_thread cloud call failed");
-    CoreError::Cloud(format!("{}", err))
+    err
 }
 
 /// Strip triple-backtick fences (with optional `json` language tag).
