@@ -7,8 +7,12 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 /// Strips any leftover redaction tokens (e.g. `[PERSON_1]`, `[EMAIL_2]`)
-/// that the LLM may have echoed in its response but that have no reverse-map
-/// entry (token was not produced during the redact pass).
+/// that the LLM produced but don't match any entry in the reverse map.
+/// This is defense-in-depth: if the model hallucinates a token (or reuses
+/// a token number that wasn't in the request), it should not reach the
+/// user. NOTE: stripping without replacement leaves grammatically broken
+/// output (e.g. "Hi , yes tomorrow works.") — in practice hallucinations
+/// are rare enough that this is preferable to letting the token through.
 static LEFTOVER_TOKEN_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\[(PERSON|EMAIL|PHONE)_\d+\]").expect("leftover token regex must compile")
 });

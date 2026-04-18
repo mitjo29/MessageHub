@@ -67,7 +67,7 @@ fn seed(store: &Store) -> (Uuid, Uuid) {
         thread_id: t,
         sender_id: c,
         content: MessageContent {
-            text: Some("Are we still on for tomorrow?".into()),
+            text: Some("Are we still on for tomorrow, Alice Example?".into()),
             html: None,
             subject: Some("Meeting".into()),
             attachments: vec![],
