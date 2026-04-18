@@ -20,7 +20,7 @@ pub mod redactor;
 
 pub use actions::CloudActions;
 pub use provider::{AnthropicCloud, CloudProvider};
-pub use redactor::{Redactor, ReverseMap};
+pub use redactor::{un_redact, Redactor, ReverseMap};
 
 use serde::{Deserialize, Serialize};
 

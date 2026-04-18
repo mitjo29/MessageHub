@@ -1,4 +1,4 @@
-use messagehub_core::ai::cloud::{Redactor, ReverseMap};
+use messagehub_core::ai::cloud::{un_redact, Redactor, ReverseMap};
 
 fn build_standalone_redactor(people: &[&str]) -> Redactor {
     // Bypasses the vault; lets us test the trie logic without seeding a store.
@@ -76,13 +76,26 @@ fn test_un_redact_round_trips() {
     let (redacted, map) = r.redact("Hi Alice Example, reach me at alice@example.com");
     assert!(redacted.contains("[PERSON_1]"));
     assert!(redacted.contains("[EMAIL_1]"));
-    let restored = Redactor::un_redact(&redacted, &map);
+    let restored = un_redact(&redacted, &map);
     assert_eq!(restored, "Hi Alice Example, reach me at alice@example.com");
 }
 
 #[test]
 fn test_un_redact_passthrough_when_map_empty() {
     let empty: ReverseMap = ReverseMap::new();
-    let out = Redactor::un_redact("no tokens here", &empty);
+    let out = un_redact("no tokens here", &empty);
     assert_eq!(out, "no tokens here");
+}
+
+#[test]
+fn test_redact_handles_non_ascii_vault_names() {
+    // Covers the Unicode safety fix — names with multi-byte chars
+    // must still redact correctly regardless of case folding.
+    let r = build_standalone_redactor(&["Hélène Müller"]);
+    let (out, map) = r.redact("Call hélène müller at +33 6 12 34 56 78");
+    assert!(out.contains("[PERSON_1]"));
+    assert!(!out.to_lowercase().contains("hélène müller"));
+    // The reverse map keeps the original casing as seen in input.
+    let restored = un_redact(&out, &map);
+    assert!(restored.to_lowercase().contains("hélène müller"));
 }

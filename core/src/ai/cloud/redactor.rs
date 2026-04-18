@@ -7,7 +7,7 @@ use crate::error::Result;
 use crate::store::Store;
 
 /// Map from token (e.g. `"[PERSON_1]"`) back to the original verbatim
-/// string that was scrubbed. `Redactor::un_redact` applies it to restore
+/// string that was scrubbed. `un_redact` applies it to restore
 /// user-visible output.
 pub type ReverseMap = HashMap<String, String>;
 
@@ -22,9 +22,8 @@ pub type ReverseMap = HashMap<String, String>;
 /// Same original → same token across one `redact` call (stable numbering
 /// within the call). Different calls get fresh maps.
 pub struct Redactor {
-    /// Vault names sorted by length descending so longest-match-first
-    /// works with a straight linear scan.
-    names: Vec<String>,
+    /// Per-name compiled regex (case-insensitive, longest-first).
+    name_regexes: Vec<(String, Regex)>,
 }
 
 static EMAIL_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -55,7 +54,15 @@ impl Redactor {
         // Longest-first so "Alice Example" wins over "Alice" in a
         // greedy forward scan.
         names.sort_by(|a, b| b.chars().count().cmp(&a.chars().count()));
-        Self { names }
+        let name_regexes = names
+            .into_iter()
+            .filter_map(|n| {
+                Regex::new(&format!("(?i){}", regex::escape(&n)))
+                    .ok()
+                    .map(|re| (n, re))
+            })
+            .collect();
+        Self { name_regexes }
     }
 
     /// Redact `input` and return `(redacted, reverse_map)`.
@@ -69,16 +76,10 @@ impl Redactor {
         let mut forward: HashMap<String, String> = HashMap::new();
         let mut counters = RedactCounters::default();
 
-        // 1. Vault names (longest first, case-insensitive).
-        for name in &self.names {
-            current = replace_case_insensitive(&current, name, |original| {
-                assign_token(
-                    original,
-                    "PERSON",
-                    &mut counters.person,
-                    &mut forward,
-                    &mut map,
-                )
+        // 1. Vault names (longest first, case-insensitive via compiled regex).
+        for (_name, re) in &self.name_regexes {
+            current = replace_regex(&current, re, |m| {
+                assign_token(m, "PERSON", &mut counters.person, &mut forward, &mut map)
             });
         }
 
@@ -94,21 +95,20 @@ impl Redactor {
 
         (current, map)
     }
+}
 
-    /// Restore the original strings from a redacted output using the
-    /// `ReverseMap` produced by `redact`. Straight find-and-replace;
-    /// tokens not in the map pass through unchanged.
-    pub fn un_redact(text: &str, map: &ReverseMap) -> String {
-        // Sort keys by length descending so tokens never partially
-        // replace each other (e.g. `[PERSON_1]` vs `[PERSON_10]`).
-        let mut keys: Vec<&String> = map.keys().collect();
-        keys.sort_by(|a, b| b.len().cmp(&a.len()));
-        let mut out = text.to_string();
-        for k in keys {
-            out = out.replace(k, map.get(k).unwrap());
-        }
-        out
+/// Restore original strings from a redacted output using the `ReverseMap`
+/// produced by `Redactor::redact`. Tokens not in the map pass through unchanged.
+pub fn un_redact(text: &str, map: &ReverseMap) -> String {
+    // Sort keys by length descending so tokens never partially
+    // replace each other (e.g. `[PERSON_1]` vs `[PERSON_10]`).
+    let mut keys: Vec<&String> = map.keys().collect();
+    keys.sort_by(|a, b| b.len().cmp(&a.len()));
+    let mut out = text.to_string();
+    for k in keys {
+        out = out.replace(k, map.get(k).unwrap());
     }
+    out
 }
 
 #[derive(Default)]
@@ -138,38 +138,6 @@ fn assign_token(
     forward.insert(fwd_key, token.clone());
     map.insert(token.clone(), original.to_string());
     token
-}
-
-/// Case-insensitive find-and-replace with a custom token-producer.
-/// Walks the string left-to-right, matching `needle` ignoring case; on
-/// match, produces a token using `producer` called with the ORIGINAL
-/// (preserving case) substring so `un_redact` restores the user's input
-/// verbatim.
-fn replace_case_insensitive(
-    haystack: &str,
-    needle: &str,
-    mut producer: impl FnMut(&str) -> String,
-) -> String {
-    let hay_lower = haystack.to_lowercase();
-    let needle_lower = needle.to_lowercase();
-    let mut out = String::with_capacity(haystack.len());
-    let mut cursor = 0;
-    while let Some(rel) = hay_lower[cursor..].find(&needle_lower) {
-        let start = cursor + rel;
-        let end = start + needle.len();
-        // `end` is in bytes and the regex is ASCII-name oriented; for
-        // safety, guard against slicing across a char boundary.
-        if !haystack.is_char_boundary(end) {
-            cursor = start + 1;
-            continue;
-        }
-        out.push_str(&haystack[cursor..start]);
-        let original = &haystack[start..end];
-        out.push_str(&producer(original));
-        cursor = end;
-    }
-    out.push_str(&haystack[cursor..]);
-    out
 }
 
 /// Regex find-and-replace with a custom token-producer.
