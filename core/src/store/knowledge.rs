@@ -4,6 +4,13 @@ use crate::error::{CoreError, Result};
 use crate::knowledge::{ParsedFile, VaultPerson};
 use crate::store::Store;
 
+/// Lightweight projection of `vault_people` used by the redactor.
+#[derive(Debug, Clone)]
+pub struct VaultPersonSummary {
+    pub name: String,
+    pub file_path: String,
+}
+
 /// Everything the indexer needs to persist for a single markdown file.
 pub struct IndexedFile<'a> {
     pub path: &'a str,
@@ -176,6 +183,21 @@ impl Store {
             .execute("DELETE FROM vault_files WHERE path = ?1", [path])?;
         self.conn().execute_batch("COMMIT;")?;
         Ok(())
+    }
+
+    /// Return every person file loaded from the vault. Used by the
+    /// cloud `Redactor` to build its name list at startup.
+    pub fn list_vault_people(&self) -> Result<Vec<VaultPersonSummary>> {
+        let mut stmt = self.conn().prepare("SELECT name, file_path FROM vault_people")?;
+        let rows: std::result::Result<Vec<VaultPersonSummary>, rusqlite::Error> = stmt
+            .query_map([], |row| {
+                Ok(VaultPersonSummary {
+                    name: row.get(0)?,
+                    file_path: row.get(1)?,
+                })
+            })?
+            .collect();
+        rows.map_err(CoreError::Database)
     }
 
     /// Lookup a vault person by an address on a specific channel.
