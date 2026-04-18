@@ -90,6 +90,33 @@ impl Store {
         Ok(messages)
     }
 
+    /// Return every message in a thread, oldest first.
+    ///
+    /// Ordering is `timestamp ASC` so the conversation reads naturally
+    /// top-to-bottom when rendered into a prompt. The `limit` caps the
+    /// oldest-N returned (not the newest-N) — use a high value if you
+    /// want the whole thread, or truncate at the call site if you need
+    /// "last N".
+    pub fn list_messages_in_thread(&self, thread_id: &Uuid, limit: u32) -> Result<Vec<Message>> {
+        let mut stmt = self.conn().prepare(
+            "SELECT id, channel_type, thread_id, sender_id, content_text, content_html,
+                    content_subject, attachments_json, timestamp, metadata_json,
+                    priority_score, category, is_read, is_archived
+             FROM messages
+             WHERE thread_id = ?1
+             ORDER BY timestamp ASC
+             LIMIT ?2",
+        )?;
+        let messages: Vec<Message> = stmt
+            .query_map(params![thread_id.to_string(), limit], |row| {
+                Ok(row_to_message(row))
+            })?
+            .collect::<std::result::Result<Vec<_>, rusqlite::Error>>()?
+            .into_iter()
+            .collect::<std::result::Result<Vec<_>, CoreError>>()?;
+        Ok(messages)
+    }
+
     pub fn mark_read(&self, id: &Uuid, read: bool) -> Result<()> {
         let rows = self.conn().execute(
             "UPDATE messages SET is_read = ?1 WHERE id = ?2",
