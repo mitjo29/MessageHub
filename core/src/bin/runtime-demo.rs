@@ -80,7 +80,11 @@ struct EmailCredentials {
     smtp_port: u16,
     username: String,
     password: String,
+    // Parsed from TOML but not yet consumed — EmailAdapter uses INBOX by
+    // default. A later plan that extends the adapter to honor this will
+    // remove the allow.
     #[serde(default = "default_mailbox")]
+    #[allow(dead_code)]
     mailbox: String,
 }
 fn default_mailbox() -> String { "INBOX".to_string() }
