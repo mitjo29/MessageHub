@@ -40,6 +40,9 @@ pub enum CoreError {
 
     #[error("ai pipeline error: {0}")]
     Ai(String),
+
+    #[error("cloud action error: {0}")]
+    Cloud(String),
 }
 
 impl From<reqwest::Error> for CoreError {
