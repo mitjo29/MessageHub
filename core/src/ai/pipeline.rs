@@ -27,9 +27,8 @@ pub struct EnrichOutcome {
 /// entry point that the channel adapter manager calls for every
 /// incoming normalized `Message`.
 ///
-/// The pipeline is `Clone` via the inner `Arc`s so it can be passed
-/// into the `AdapterManager::on_messages` callback closure without
-/// ownership gymnastics.
+/// The pipeline is `Clone` via the inner `Arc`s so it can be shared
+/// across async tasks without ownership gymnastics.
 #[derive(Clone)]
 pub struct AiPipeline {
     classifier: Arc<Classifier>,

@@ -144,7 +144,7 @@ impl ChannelAdapter for TelegramAdapter {
             }
         }
 
-        // Note: last_update_id should be updated by the caller (AdapterManager)
+        // Note: last_update_id should be updated by the caller (Runtime channel task)
         // after successful processing. For now we track it via metadata.
         debug!(count = raw_messages.len(), "telegram messages fetched");
         Ok(raw_messages)

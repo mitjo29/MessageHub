@@ -1,5 +1,4 @@
 pub mod email;
-pub mod manager;
 pub mod mock;
 pub mod telegram;
 
@@ -69,8 +68,8 @@ pub trait ChannelAdapter: Send + Sync {
 
 /// Convert a `RawMessage` into a core `Message`.
 ///
-/// The `sender_id` and `thread_id` are resolved by the caller (AdapterManager)
-/// via contact lookup and thread matching before calling this function.
+/// The `sender_id` and `thread_id` are resolved by the caller (the Runtime
+/// ingestor) via contact lookup and thread matching before calling this function.
 pub fn normalize(raw: RawMessage, sender_id: Uuid, thread_id: Uuid) -> Message {
     let attachments = raw
         .attachments
