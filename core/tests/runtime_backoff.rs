@@ -83,7 +83,9 @@ async fn status_progresses_degraded_failed_then_healthy() {
         .insert_channel_config(&cfg(id))
         .unwrap();
 
-    let fails = Arc::new(AtomicUsize::new(5)); // 5 consecutive failures (crosses threshold)
+    // 4 failures crosses FAIL_THRESHOLD (Failed at cf=4). Keeps the backoff
+    // wall-time bounded: 1+2+4+8+16 = 31s of deterministic delay, ±20% jitter.
+    let fails = Arc::new(AtomicUsize::new(4));
     let mut rt = Runtime::builder(Arc::clone(&store))
         .with_factory(
             "Telegram",
