@@ -20,6 +20,9 @@ fn make_config(channel: Channel, label: &str) -> ChannelConfig {
         poll_interval_secs: 1,
         last_sync_cursor: None,
         last_sync_at: None,
+        status: messagehub_core::runtime::status::ChannelStatus::Healthy,
+        last_error: None,
+        consecutive_failures: 0,
     }
 }
 

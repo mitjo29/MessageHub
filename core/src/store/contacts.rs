@@ -113,9 +113,90 @@ impl Store {
         Ok(identities)
     }
 
+    pub fn find_thread_by_external_id(
+        &self,
+        channel: crate::types::Channel,
+        external_id: &str,
+    ) -> Result<Option<crate::types::Thread>> {
+        use crate::types::Thread;
+        use rusqlite::OptionalExtension;
+
+        let row = self.conn().query_row(
+            "SELECT id, channel_type, subject, message_count, last_message_at, created_at, external_thread_id \
+             FROM threads \
+             WHERE channel_type = ?1 AND external_thread_id = ?2 \
+             LIMIT 1",
+            params![channel.to_db_str(), external_id],
+            |row| {
+                let id_str: String = row.get(0)?;
+                let channel_str: String = row.get(1)?;
+                let subject: Option<String> = row.get(2)?;
+                let message_count: u32 = row.get(3)?;
+                let last_at: String = row.get(4)?;
+                let created_at: String = row.get(5)?;
+                let ext: Option<String> = row.get(6)?;
+                Ok((id_str, channel_str, subject, message_count, last_at, created_at, ext))
+            },
+        ).optional()?;
+
+        let Some((id_str, channel_str, subject, message_count, last_at, created_at, ext)) = row else {
+            return Ok(None);
+        };
+
+        let id = uuid::Uuid::parse_str(&id_str)
+            .map_err(|e| CoreError::InvalidInput(format!("bad thread id: {}", e)))?;
+        let channel = crate::types::Channel::from_db_str(&channel_str)
+            .ok_or_else(|| CoreError::InvalidInput(format!("unknown channel: {}", channel_str)))?;
+        let last_message_at = chrono::DateTime::parse_from_rfc3339(&last_at)
+            .map_err(|e| CoreError::InvalidInput(format!("bad last_message_at: {}", e)))?
+            .with_timezone(&chrono::Utc);
+        let created_at = chrono::DateTime::parse_from_rfc3339(&created_at)
+            .map_err(|e| CoreError::InvalidInput(format!("bad created_at: {}", e)))?
+            .with_timezone(&chrono::Utc);
+
+        Ok(Some(Thread {
+            id,
+            channel,
+            subject,
+            participant_ids: vec![],
+            message_count,
+            last_message_at,
+            created_at,
+            external_thread_id: ext,
+        }))
+    }
+
+    pub fn find_or_create_contact_by_address(
+        &self,
+        channel: crate::types::Channel,
+        address: &str,
+        display_name: &str,
+    ) -> Result<crate::types::Contact> {
+        use crate::types::{Contact, ContactIdentity};
+
+        if let Some(existing) = self.find_contact_by_address(channel, address)? {
+            return Ok(existing);
+        }
+
+        let contact = Contact {
+            id: uuid::Uuid::new_v4(),
+            display_name: display_name.to_string(),
+            vault_ref: None,
+            identities: vec![ContactIdentity {
+                channel,
+                address: address.to_string(),
+            }],
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+        self.insert_contact(&contact)?;
+        Ok(contact)
+    }
+
     pub fn insert_thread(&self, thread: &crate::types::Thread) -> Result<()> {
         self.conn().execute(
-            "INSERT INTO threads (id, channel_type, subject, message_count, last_message_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO threads (id, channel_type, subject, message_count, last_message_at, created_at, external_thread_id) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 thread.id.to_string(),
                 thread.channel.to_db_str(),
@@ -123,8 +204,66 @@ impl Store {
                 thread.message_count,
                 thread.last_message_at.to_rfc3339(),
                 thread.created_at.to_rfc3339(),
+                thread.external_thread_id,
             ],
         )?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_find_thread_by_external_id_roundtrip() {
+        use crate::types::{Channel, Thread};
+        use chrono::Utc;
+        use uuid::Uuid;
+
+        let store = crate::store::Store::open_in_memory().unwrap();
+        let thread = Thread {
+            id: Uuid::new_v4(),
+            channel: Channel::Telegram,
+            subject: None,
+            participant_ids: vec![],
+            message_count: 0,
+            last_message_at: Utc::now(),
+            created_at: Utc::now(),
+            external_thread_id: Some("chat-42".to_string()),
+        };
+        store.insert_thread(&thread).unwrap();
+
+        let hit = store
+            .find_thread_by_external_id(Channel::Telegram, "chat-42")
+            .unwrap();
+        assert!(hit.is_some());
+        assert_eq!(hit.unwrap().id, thread.id);
+
+        let miss = store
+            .find_thread_by_external_id(Channel::Telegram, "chat-99")
+            .unwrap();
+        assert!(miss.is_none());
+
+        let wrong_channel = store
+            .find_thread_by_external_id(Channel::Email, "chat-42")
+            .unwrap();
+        assert!(wrong_channel.is_none());
+    }
+
+    #[test]
+    fn test_find_or_create_contact_by_address_creates_then_finds() {
+        use crate::types::Channel;
+
+        let store = crate::store::Store::open_in_memory().unwrap();
+
+        let a = store
+            .find_or_create_contact_by_address(Channel::Telegram, "alice_bot", "Alice")
+            .unwrap();
+        let b = store
+            .find_or_create_contact_by_address(Channel::Telegram, "alice_bot", "Alice-renamed")
+            .unwrap();
+
+        assert_eq!(a.id, b.id, "second call should return the same contact");
+        // Display name is set only on creation; second call does not overwrite.
+        assert_eq!(a.display_name, "Alice");
     }
 }

@@ -31,6 +31,7 @@ fn seed_contact_and_thread(store: &Store) -> (Uuid, Uuid) {
             message_count: 0,
             last_message_at: Utc::now(),
             created_at: Utc::now(),
+            external_thread_id: None,
         })
         .unwrap();
     (contact_id, thread_id)
@@ -113,6 +114,7 @@ fn test_list_messages_in_thread_ignores_other_threads() {
             message_count: 0,
             last_message_at: Utc::now(),
             created_at: Utc::now(),
+            external_thread_id: None,
         })
         .unwrap();
 

@@ -131,6 +131,20 @@ impl Store {
         Ok(())
     }
 
+    pub fn set_message_classification(
+        &self,
+        id: &uuid::Uuid,
+        category: Option<&str>,
+        priority: Option<crate::types::PriorityScore>,
+    ) -> Result<()> {
+        let priority_score: Option<i32> = priority.map(|p| p.value() as i32);
+        self.conn().execute(
+            "UPDATE messages SET priority_score = ?1, category = ?2 WHERE id = ?3",
+            params![priority_score, category, id.to_string()],
+        )?;
+        Ok(())
+    }
+
     pub fn search_messages(&self, query: &str, limit: u32) -> Result<Vec<Message>> {
         // Escape double quotes and wrap in quotes for FTS5 phrase search to prevent syntax injection
         let escaped = query.replace('"', "\"\"");
@@ -149,6 +163,58 @@ impl Store {
             .into_iter()
             .collect::<std::result::Result<Vec<_>, CoreError>>()?;
         Ok(messages)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_set_message_classification_updates_row() {
+        use crate::types::{Channel, Message, MessageContent, PriorityScore, Thread};
+        use std::collections::HashMap;
+
+        let store = crate::store::Store::open_in_memory().unwrap();
+        let contact = store
+            .find_or_create_contact_by_address(Channel::Telegram, "u1", "User")
+            .unwrap();
+        let thread_id = uuid::Uuid::new_v4();
+        store.insert_thread(&Thread {
+            id: thread_id,
+            channel: Channel::Telegram,
+            subject: None,
+            participant_ids: vec![],
+            message_count: 0,
+            last_message_at: chrono::Utc::now(),
+            created_at: chrono::Utc::now(),
+            external_thread_id: None,
+        }).unwrap();
+
+        let msg = Message {
+            id: uuid::Uuid::new_v4(),
+            channel: Channel::Telegram,
+            thread_id,
+            sender_id: contact.id,
+            content: MessageContent {
+                text: Some("Hi".to_string()),
+                html: None,
+                subject: None,
+                attachments: vec![],
+            },
+            timestamp: chrono::Utc::now(),
+            metadata: HashMap::new(),
+            priority: None,
+            category: None,
+            is_read: false,
+            is_archived: false,
+        };
+        store.insert_message(&msg).unwrap();
+
+        store.set_message_classification(&msg.id, Some("work"), Some(PriorityScore::new(4).unwrap()))
+            .unwrap();
+
+        let reloaded = store.get_message(&msg.id).unwrap();
+        assert_eq!(reloaded.category.as_deref(), Some("work"));
+        assert_eq!(reloaded.priority, Some(PriorityScore::new(4).unwrap()));
     }
 }
 

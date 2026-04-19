@@ -63,6 +63,7 @@ fn seed_thread(store: &Store) -> (Uuid, Uuid) {
             message_count: 0,
             last_message_at: Utc::now(),
             created_at: Utc::now(),
+            external_thread_id: None,
         })
         .unwrap();
     for (i, body) in ["hey", "sure, Friday?", "sounds good"].iter().enumerate() {

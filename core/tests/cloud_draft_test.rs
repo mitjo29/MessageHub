@@ -59,6 +59,7 @@ fn seed(store: &Store) -> (Uuid, Uuid) {
             message_count: 0,
             last_message_at: Utc::now(),
             created_at: Utc::now(),
+            external_thread_id: None,
         })
         .unwrap();
     let m = Message {

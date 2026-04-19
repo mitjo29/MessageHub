@@ -186,6 +186,9 @@ mod tests {
             poll_interval_secs: 1,
             last_sync_cursor: None,
             last_sync_at: None,
+            status: crate::runtime::status::ChannelStatus::Healthy,
+            last_error: None,
+            consecutive_failures: 0,
         }
     }
 

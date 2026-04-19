@@ -59,6 +59,7 @@ async fn test_facade_handles_three_actions_in_sequence() {
             message_count: 0,
             last_message_at: Utc::now(),
             created_at: Utc::now(),
+            external_thread_id: None,
         })
         .unwrap();
     let msg = Message {
