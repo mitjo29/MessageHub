@@ -120,6 +120,14 @@ impl Store {
         Ok(())
     }
 
+    pub fn update_channel_enabled(&self, id: &uuid::Uuid, enabled: bool) -> Result<()> {
+        self.conn().execute(
+            "UPDATE channels SET enabled = ?1 WHERE id = ?2",
+            rusqlite::params![enabled as i64, id.to_string()],
+        )?;
+        Ok(())
+    }
+
     pub fn update_sync_state(&self, channel_id: &Uuid, cursor: Option<&str>, synced_at: chrono::DateTime<chrono::Utc>) -> Result<()> {
         let rows = self.conn().execute(
             "UPDATE channels SET last_sync_cursor = ?1, last_sync_at = ?2, updated_at = ?3 WHERE id = ?4",
