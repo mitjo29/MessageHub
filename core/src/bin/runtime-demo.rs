@@ -10,6 +10,14 @@ use std::process::ExitCode;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
+use async_trait::async_trait;
+use messagehub_core::adapters::{
+    email::{EmailAdapter, ImapSettings},
+    telegram::TelegramAdapter,
+    ChannelAdapter,
+};
+use messagehub_core::error::Result as CoreResult;
+use messagehub_core::runtime::factory::AdapterFactory;
 use messagehub_core::runtime::status::ChannelStatus;
 use messagehub_core::store::Store;
 use messagehub_core::types::{Channel, ChannelConfig};
@@ -167,6 +175,68 @@ fn reconcile_channels(
     Ok(labels)
 }
 
+// ---------------------------------------------------------------------------
+// Factory implementations
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+struct EmailConnection {
+    imap_host: String,
+    imap_port: u16,
+    smtp_host: String,
+    smtp_port: u16,
+}
+
+struct EmailFactoryImpl { creds: HashMap<Uuid, EmailConnection> }
+
+#[async_trait]
+impl AdapterFactory for EmailFactoryImpl {
+    async fn build(&self, row: &ChannelConfig) -> CoreResult<Box<dyn ChannelAdapter>> {
+        let c = self.creds.get(&row.id).ok_or_else(|| {
+            messagehub_core::error::CoreError::InvalidInput(format!(
+                "runtime-demo: no email credentials for channel '{}'", row.label,
+            ))
+        })?;
+        let adapter = EmailAdapter::with_settings(ImapSettings {
+            host: c.imap_host.clone(),
+            port: c.imap_port,
+            smtp_host: c.smtp_host.clone(),
+            smtp_port: c.smtp_port,
+        });
+        Ok(Box::new(adapter))
+    }
+}
+
+struct TelegramFactoryImpl;
+
+#[async_trait]
+impl AdapterFactory for TelegramFactoryImpl {
+    async fn build(&self, _row: &ChannelConfig) -> CoreResult<Box<dyn ChannelAdapter>> {
+        Ok(Box::new(TelegramAdapter::new()))
+    }
+}
+
+fn build_factories(
+    entries: &[ChannelEntry],
+) -> Result<(Arc<EmailFactoryImpl>, Arc<TelegramFactoryImpl>), Box<dyn std::error::Error>> {
+    let mut email_creds = HashMap::new();
+    for entry in entries.iter().filter(|e| e.kind == "email") {
+        let id = stable_channel_id(&entry.kind, &entry.label);
+        let c: EmailCredentials = entry.credentials.clone().try_into()
+            .map_err(|e| format!("email channel '{}': {}", entry.label, e))?;
+        email_creds.insert(id, EmailConnection {
+            imap_host: c.imap_host,
+            imap_port: c.imap_port,
+            smtp_host: c.smtp_host,
+            smtp_port: c.smtp_port,
+        });
+    }
+    Ok((
+        Arc::new(EmailFactoryImpl { creds: email_creds }),
+        Arc::new(TelegramFactoryImpl),
+    ))
+}
+
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let config_path = parse_config_path(&args);
@@ -179,5 +249,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let labels = reconcile_channels(&store, &config.channels)?;
     eprintln!("runtime-demo: {} channel(s) reconciled into store", labels.len());
+
+    let (email_factory, telegram_factory) = build_factories(&config.channels)?;
+    let email_count = email_factory.creds.len();
+    let telegram_count = config.channels.iter().filter(|c| c.kind == "telegram").count();
+    eprintln!(
+        "runtime-demo: factories built — {} email, {} telegram",
+        email_count, telegram_count,
+    );
+    let _ = labels;
+    let _ = telegram_factory;
     Ok(())
 }
