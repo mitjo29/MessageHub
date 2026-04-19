@@ -60,4 +60,11 @@ pub struct ChannelConfig {
     pub poll_interval_secs: u32,
     pub last_sync_cursor: Option<String>,
     pub last_sync_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Current health (persisted). Defaults to Healthy for rows predating Plan 6.
+    #[serde(default)]
+    pub status: crate::runtime::status::ChannelStatus,
+    #[serde(default)]
+    pub last_error: Option<String>,
+    #[serde(default)]
+    pub consecutive_failures: u32,
 }

@@ -8,6 +8,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("002_knowledge", include_str!("../../migrations/002_knowledge.sql")),
     ("003_ai", include_str!("../../migrations/003_ai.sql")),
     ("004_cloud", include_str!("../../migrations/004_cloud.sql")),
+    ("005_runtime", include_str!("../../migrations/005_runtime.sql")),
 ];
 
 pub fn run_migrations(conn: &Connection) -> Result<()> {

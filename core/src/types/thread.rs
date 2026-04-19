@@ -13,4 +13,6 @@ pub struct Thread {
     pub message_count: u32,
     pub last_message_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
+    /// External service's thread/conversation id (null for synthesized threads).
+    pub external_thread_id: Option<String>,
 }

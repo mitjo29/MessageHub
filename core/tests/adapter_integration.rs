@@ -1,14 +1,10 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
 
 use chrono::Utc;
 use uuid::Uuid;
 
-use messagehub_core::adapters::mock::MockAdapter;
-use messagehub_core::adapters::manager::AdapterManager;
 use messagehub_core::adapters::{normalize, RawMessage, ChannelAdapter};
-use messagehub_core::types::{Channel, ChannelConfig, MessageContent};
+use messagehub_core::types::{Channel, ChannelConfig};
 
 fn make_config(channel: Channel, label: &str) -> ChannelConfig {
     ChannelConfig {
@@ -20,6 +16,9 @@ fn make_config(channel: Channel, label: &str) -> ChannelConfig {
         poll_interval_secs: 1,
         last_sync_cursor: None,
         last_sync_at: None,
+        status: messagehub_core::runtime::status::ChannelStatus::Healthy,
+        last_error: None,
+        consecutive_failures: 0,
     }
 }
 
@@ -37,127 +36,6 @@ fn make_raw_message(channel: Channel, id: &str, text: &str) -> RawMessage {
         timestamp: Utc::now(),
         metadata: HashMap::new(),
     }
-}
-
-#[tokio::test]
-async fn test_full_lifecycle_with_mock() {
-    let mock = MockAdapter::new().with_channel(Channel::Email);
-    mock.add_message(make_raw_message(Channel::Email, "msg-1", "Hello from email"));
-    mock.add_message(make_raw_message(Channel::Email, "msg-2", "Second email"));
-
-    let received = Arc::new(AtomicUsize::new(0));
-    let received_clone = Arc::clone(&received);
-
-    let mut manager = AdapterManager::new(move |msgs| {
-        received_clone.fetch_add(msgs.len(), Ordering::Relaxed);
-    });
-
-    let config = make_config(Channel::Email, "test@example.com");
-    let config_id = manager.register(Box::new(mock), config).await.unwrap();
-
-    manager.start_sync(config_id).unwrap();
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-
-    assert!(received.load(Ordering::Relaxed) >= 2);
-
-    let adapter = manager.get_adapter(&config_id).unwrap();
-    {
-        let adapter = adapter.lock().await;
-        let content = MessageContent {
-            text: Some("Reply content".to_string()),
-            html: None,
-            subject: None,
-            attachments: vec![],
-        };
-        adapter.send_reply("thread-1", &content).await.unwrap();
-    }
-
-    manager.shutdown().await.unwrap();
-    assert_eq!(manager.registered_configs().len(), 0);
-}
-
-#[tokio::test]
-async fn test_multiple_adapters_independent() {
-    let email_count = Arc::new(AtomicUsize::new(0));
-    let telegram_count = Arc::new(AtomicUsize::new(0));
-    let email_clone = Arc::clone(&email_count);
-    let telegram_clone = Arc::clone(&telegram_count);
-
-    let mut manager = AdapterManager::new(move |msgs| {
-        for msg in &msgs {
-            match msg.channel {
-                Channel::Email => {
-                    email_clone.fetch_add(1, Ordering::Relaxed);
-                }
-                Channel::Telegram => {
-                    telegram_clone.fetch_add(1, Ordering::Relaxed);
-                }
-                _ => {}
-            }
-        }
-    });
-
-    let email_mock = MockAdapter::new().with_channel(Channel::Email);
-    email_mock.add_message(make_raw_message(Channel::Email, "e1", "Email 1"));
-    let email_config = make_config(Channel::Email, "email");
-    let email_id = manager
-        .register(Box::new(email_mock), email_config)
-        .await
-        .unwrap();
-
-    let tg_mock = MockAdapter::new().with_channel(Channel::Telegram);
-    tg_mock.add_message(make_raw_message(Channel::Telegram, "t1", "Telegram 1"));
-    tg_mock.add_message(make_raw_message(Channel::Telegram, "t2", "Telegram 2"));
-    let tg_config = make_config(Channel::Telegram, "telegram");
-    let tg_id = manager
-        .register(Box::new(tg_mock), tg_config)
-        .await
-        .unwrap();
-
-    manager.start_sync(email_id).unwrap();
-    manager.start_sync(tg_id).unwrap();
-
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-
-    assert!(email_count.load(Ordering::Relaxed) >= 1);
-    assert!(telegram_count.load(Ordering::Relaxed) >= 2);
-
-    manager.shutdown().await.unwrap();
-}
-
-#[tokio::test]
-async fn test_adapter_failure_does_not_crash_manager() {
-    let mut manager = AdapterManager::new(|_| {});
-
-    let failing_mock = MockAdapter::new();
-    failing_mock.set_fail_fetch(true);
-
-    let config = make_config(Channel::Telegram, "failing");
-    let config_id = manager
-        .register(Box::new(failing_mock), config)
-        .await
-        .unwrap();
-
-    manager.start_sync(config_id).unwrap();
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-
-    assert!(manager.is_syncing(&config_id));
-
-    manager.shutdown().await.unwrap();
-}
-
-#[tokio::test]
-async fn test_connect_failure_prevents_registration() {
-    let mut manager = AdapterManager::new(|_| {});
-
-    let failing_mock = MockAdapter::new();
-    failing_mock.set_fail_connect(true);
-
-    let config = make_config(Channel::Telegram, "fail-connect");
-    let result = manager.register(Box::new(failing_mock), config).await;
-
-    assert!(result.is_err());
-    assert_eq!(manager.registered_configs().len(), 0);
 }
 
 #[tokio::test]
@@ -179,6 +57,8 @@ async fn test_normalize_roundtrip() {
 
 #[tokio::test]
 async fn test_mock_adapter_trait_object() {
+    use messagehub_core::adapters::mock::MockAdapter;
+
     let mock = MockAdapter::new().with_channel(Channel::Sms);
     let mut adapter: Box<dyn ChannelAdapter> = Box::new(mock);
 

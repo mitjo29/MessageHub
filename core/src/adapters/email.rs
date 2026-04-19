@@ -449,6 +449,9 @@ mod tests {
             poll_interval_secs: 30,
             last_sync_cursor: None,
             last_sync_at: None,
+            status: crate::runtime::status::ChannelStatus::Healthy,
+            last_error: None,
+            consecutive_failures: 0,
         };
 
         adapter.connect(&config).await.unwrap();
@@ -471,6 +474,9 @@ mod tests {
             poll_interval_secs: 30,
             last_sync_cursor: None,
             last_sync_at: None,
+            status: crate::runtime::status::ChannelStatus::Healthy,
+            last_error: None,
+            consecutive_failures: 0,
         };
 
         let result = adapter.connect(&config).await;

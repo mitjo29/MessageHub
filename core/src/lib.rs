@@ -4,3 +4,4 @@ pub mod store;
 pub mod adapters;
 pub mod knowledge;
 pub mod ai;
+pub mod runtime;

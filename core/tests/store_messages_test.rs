@@ -33,6 +33,7 @@ fn make_thread(store: &Store) -> Thread {
         message_count: 0,
         last_message_at: Utc::now(),
         created_at: Utc::now(),
+        external_thread_id: None,
     };
     store.insert_thread(&thread).unwrap();
     thread
