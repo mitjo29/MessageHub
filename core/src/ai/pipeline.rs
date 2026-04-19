@@ -53,7 +53,7 @@ impl AiPipeline {
     /// `Store::insert_message`, and log the decision to `action_log`.
     ///
     /// `sender_address` and `sender_name` are passed through rather than
-    /// re-resolved from the store because the adapter manager has already
+    /// re-resolved from the store because the Runtime ingestor has already
     /// done that lookup to produce the `Message::sender_id`.
     ///
     /// Graceful degradation: if classification fails for any reason
