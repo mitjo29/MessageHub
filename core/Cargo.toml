@@ -33,3 +33,4 @@ fastembed = { version = "5", default-features = false, features = ["hf-hub-nativ
 [dev-dependencies]
 tempfile = "3"
 wiremock = "0.6"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "test-util"] }
