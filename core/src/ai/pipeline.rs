@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use tracing::{debug, info, warn};
 use uuid::Uuid;
@@ -151,38 +151,51 @@ impl AiPipeline {
     /// This is the method the runtime's `ClassifierWorker` calls. Unlike
     /// `enrich_and_store`, it does not insert — it assumes the ingestor
     /// already persisted the message.
+    ///
+    /// Takes `&Mutex<Store>` so the worker can share the same `Arc<Mutex<Store>>`
+    /// without holding the lock across the async LLM call. The lock is
+    /// acquired twice: once to read message + contact data, and once to
+    /// write the classification result.
     pub async fn classify_stored(
         &self,
-        store: &Store,
+        store: &Mutex<Store>,
         id: &Uuid,
     ) -> Result<EnrichOutcome> {
-        let msg = store.get_message(id)?;
-        let sender = store.get_contact(&msg.sender_id)?;
-        let sender_address = sender
-            .identities
-            .iter()
-            .find(|i| i.channel == msg.channel)
-            .map(|i| i.address.clone())
-            .unwrap_or_default();
+        // Phase 1: read data under lock, then release immediately.
+        let (msg_channel, sender_display_name, sender_address, subject, body, rag) = {
+            let guard = store.lock().expect("store mutex poisoned");
+            let msg = guard.get_message(id)?;
+            let sender = guard.get_contact(&msg.sender_id)?;
+            let sender_address = sender
+                .identities
+                .iter()
+                .find(|i| i.channel == msg.channel)
+                .map(|i| i.address.clone())
+                .unwrap_or_default();
 
-        let subject = msg.content.subject.clone().unwrap_or_default();
-        let body = msg.content.text.clone().unwrap_or_default();
+            let subject = msg.content.subject.clone().unwrap_or_default();
+            let body = msg.content.text.clone().unwrap_or_default();
 
-        let rag = build_rag_context(
-            store,
-            self.retriever.as_ref(),
-            &self.profile,
-            msg.channel,
-            &sender_address,
-            &subject,
-            &body,
-        )?;
+            let rag = build_rag_context(
+                &*guard,
+                self.retriever.as_ref(),
+                &self.profile,
+                msg.channel,
+                &sender_address,
+                &subject,
+                &body,
+            )?;
 
+            (msg.channel, sender.display_name.clone(), sender_address, subject, body, rag)
+            // guard drops here, lock released
+        };
+
+        // Phase 2: async LLM call — no store lock held.
         let result = self
             .classifier
             .classify(
-                msg.channel,
-                &sender.display_name,
+                msg_channel,
+                &sender_display_name,
                 &sender_address,
                 &subject,
                 &body,
@@ -190,15 +203,17 @@ impl AiPipeline {
             )
             .await;
 
+        // Phase 3: write result under a brief lock.
         let message_id_str = id.to_string();
+        let guard = store.lock().expect("store mutex poisoned");
         match result {
             Ok(classification) => {
-                store.set_message_classification(
+                guard.set_message_classification(
                     id,
                     Some(classification.category.as_str()),
                     Some(classification.priority),
                 )?;
-                store.log_ai_decision(
+                guard.log_ai_decision(
                     "classify",
                     "message",
                     &message_id_str,
@@ -214,13 +229,13 @@ impl AiPipeline {
                 Ok(EnrichOutcome { classified: true })
             }
             Err(e) => {
-                store.set_message_classification(
+                guard.set_message_classification(
                     id,
                     Some("Unknown"),
                     Some(PriorityScore::new(1).unwrap()),
                 )?;
                 let reason = format!("classification failed: {}", e);
-                if let Err(log_err) = store.log_ai_decision(
+                if let Err(log_err) = guard.log_ai_decision(
                     "classify_failed",
                     "message",
                     &message_id_str,
@@ -277,7 +292,7 @@ mod classify_stored_tests {
         }
     }
 
-    async fn setup_stored_message() -> (Store, Uuid) {
+    async fn setup_stored_message() -> (std::sync::Mutex<Store>, Uuid) {
         let store = Store::open_in_memory().unwrap();
         let contact = store
             .find_or_create_contact_by_address(Channel::Telegram, "u1", "User")
@@ -315,7 +330,7 @@ mod classify_stored_tests {
         };
         let id = msg.id;
         store.insert_message(&msg).unwrap();
-        (store, id)
+        (std::sync::Mutex::new(store), id)
     }
 
     #[tokio::test]
@@ -330,7 +345,7 @@ mod classify_stored_tests {
         let outcome = pipeline.classify_stored(&store, &id).await.unwrap();
         assert!(outcome.classified);
 
-        let reloaded = store.get_message(&id).unwrap();
+        let reloaded = store.lock().unwrap().get_message(&id).unwrap();
         assert!(reloaded.category.is_some());
         assert!(reloaded.priority.is_some());
     }
@@ -347,7 +362,7 @@ mod classify_stored_tests {
         let outcome = pipeline.classify_stored(&store, &id).await.unwrap();
         assert!(!outcome.classified);
 
-        let reloaded = store.get_message(&id).unwrap();
+        let reloaded = store.lock().unwrap().get_message(&id).unwrap();
         assert!(reloaded.category.is_some());
         assert_eq!(reloaded.priority, Some(PriorityScore::new(1).unwrap()));
     }
