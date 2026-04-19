@@ -5,7 +5,14 @@
 //! exits cleanly on Ctrl-C. See
 //! `docs/superpowers/specs/2026-04-19-plan7a-runtime-demo-design.md`.
 
+use std::collections::HashMap;
 use std::process::ExitCode;
+use std::sync::{Arc, Mutex};
+use uuid::Uuid;
+
+use messagehub_core::runtime::status::ChannelStatus;
+use messagehub_core::store::Store;
+use messagehub_core::types::{Channel, ChannelConfig};
 
 fn main() -> ExitCode {
     init_tracing();
@@ -93,14 +100,84 @@ fn parse_config_path(args: &[String]) -> PathBuf {
     default_config_path()
 }
 
+fn stable_channel_id(kind: &str, label: &str) -> Uuid {
+    // UUID v5 with NAMESPACE_OID gives a deterministic id from (kind, label).
+    // Re-runs of runtime-demo always map the same TOML entry to the same DB row.
+    Uuid::new_v5(&Uuid::NAMESPACE_OID, format!("{}:{}", kind, label).as_bytes())
+}
+
+fn channel_kind_from_toml(kind: &str) -> Result<Channel, Box<dyn std::error::Error>> {
+    match kind {
+        "email"    => Ok(Channel::Email),
+        "telegram" => Ok(Channel::Telegram),
+        other => Err(format!("unsupported channel kind '{}'", other).into()),
+    }
+}
+
+fn credential_keychain_ref(entry: &ChannelEntry) -> Result<String, Box<dyn std::error::Error>> {
+    match entry.kind.as_str() {
+        "email" => {
+            let c: EmailCredentials = entry.credentials.clone().try_into()
+                .map_err(|e| format!("email channel '{}': bad credentials — {}", entry.label, e))?;
+            // EmailAdapter::connect() reads config.keychain_ref as "user:password".
+            Ok(format!("{}:{}", c.username, c.password))
+        }
+        "telegram" => {
+            let c: TelegramCredentials = entry.credentials.clone().try_into()
+                .map_err(|e| format!("telegram channel '{}': bad credentials — {}", entry.label, e))?;
+            // TelegramAdapter::connect() reads config.keychain_ref as the raw bot token.
+            Ok(c.bot_token)
+        }
+        other => Err(format!("unsupported channel kind '{}'", other).into()),
+    }
+}
+
+fn reconcile_channels(
+    store: &Mutex<Store>,
+    entries: &[ChannelEntry],
+) -> Result<HashMap<Uuid, String>, Box<dyn std::error::Error>> {
+    let guard = store.lock().expect("runtime-demo: store mutex poisoned");
+    let existing: Vec<ChannelConfig> = guard.list_channel_configs()?;
+    let existing_ids: std::collections::HashSet<Uuid> =
+        existing.iter().map(|c| c.id).collect();
+
+    let mut labels = HashMap::new();
+    for entry in entries {
+        let id = stable_channel_id(&entry.kind, &entry.label);
+        labels.insert(id, entry.label.clone());
+        if existing_ids.contains(&id) { continue; }
+
+        let channel = channel_kind_from_toml(&entry.kind)?;
+        let keychain_ref = credential_keychain_ref(entry)?;
+        let cfg = ChannelConfig {
+            id,
+            channel,
+            label: entry.label.clone(),
+            keychain_ref,
+            enabled: entry.enabled,
+            poll_interval_secs: entry.poll_interval_secs,
+            last_sync_cursor: None,
+            last_sync_at: None,
+            status: ChannelStatus::Healthy,
+            last_error: None,
+            consecutive_failures: 0,
+        };
+        guard.insert_channel_config(&cfg)?;
+    }
+    Ok(labels)
+}
+
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let config_path = parse_config_path(&args);
     let config = load_config(&config_path)?;
-    eprintln!(
-        "runtime-demo: loaded {} channel(s) from {}",
-        config.channels.len(),
-        config_path.display(),
-    );
+
+    let store = Arc::new(Mutex::new(Store::open(
+        std::path::Path::new(&config.database),
+        &config.password,
+    )?));
+
+    let labels = reconcile_channels(&store, &config.channels)?;
+    eprintln!("runtime-demo: {} channel(s) reconciled into store", labels.len());
     Ok(())
 }
