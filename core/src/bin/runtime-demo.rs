@@ -24,12 +24,16 @@ use messagehub_core::types::{Channel, ChannelConfig};
 
 fn main() -> ExitCode {
     init_tracing();
-    match run() {
-        Ok(()) => ExitCode::SUCCESS,
+    let rt = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
+        Ok(rt) => rt,
         Err(e) => {
-            eprintln!("runtime-demo: {}", e);
-            ExitCode::FAILURE
+            eprintln!("runtime-demo: failed to start tokio runtime: {}", e);
+            return ExitCode::FAILURE;
         }
+    };
+    match rt.block_on(run()) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => { eprintln!("runtime-demo: {}", e); ExitCode::FAILURE }
     }
 }
 
@@ -237,7 +241,69 @@ fn build_factories(
     ))
 }
 
-fn run() -> Result<(), Box<dyn std::error::Error>> {
+// ---------------------------------------------------------------------------
+// Event printer
+// ---------------------------------------------------------------------------
+
+use chrono::Local;
+use messagehub_core::runtime::events::RuntimeEvent;
+use tokio::sync::broadcast::Receiver;
+
+async fn print_events(mut rx: Receiver<RuntimeEvent>, labels: HashMap<Uuid, String>) {
+    loop {
+        match rx.recv().await {
+            Ok(ev) => {
+                let now = Local::now().format("%H:%M:%S%.3f");
+                let label_of = |id: &Uuid| labels.get(id).cloned()
+                    .unwrap_or_else(|| id.to_string());
+                match ev {
+                    RuntimeEvent::MessageIngested { id, channel_id } => {
+                        println!("[{} ingested]  msg={} channel=\"{}\"",
+                                 now, short(&id), label_of(&channel_id));
+                    }
+                    RuntimeEvent::MessageClassified { id, category, priority } => {
+                        println!("[{} classified] msg={} category={} priority={}",
+                                 now,
+                                 short(&id),
+                                 category.unwrap_or_else(|| "?".into()),
+                                 priority.map(|p| p.value().to_string())
+                                         .unwrap_or_else(|| "?".into()));
+                    }
+                    RuntimeEvent::SyncSucceeded { channel_id, count } => {
+                        println!("[{} sync ok]   channel=\"{}\" count={}",
+                                 now, label_of(&channel_id), count);
+                    }
+                    RuntimeEvent::SyncFailed { channel_id, error, attempt } => {
+                        println!("[{} sync fail] channel=\"{}\" attempt={} error=\"{}\"",
+                                 now, label_of(&channel_id), attempt, error);
+                    }
+                    RuntimeEvent::ChannelStatusChanged { channel_id, status } => {
+                        println!("[{} status]    channel=\"{}\" {:?}",
+                                 now, label_of(&channel_id), status);
+                    }
+                }
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                eprintln!("runtime-demo: event stream lagged, dropped {} events", n);
+            }
+        }
+    }
+}
+
+fn short(id: &Uuid) -> String {
+    let s = id.to_string();
+    s.chars().take(8).collect()
+}
+
+// ---------------------------------------------------------------------------
+// Main async entry point
+// ---------------------------------------------------------------------------
+
+async fn run() -> Result<(), Box<dyn std::error::Error>> {
+    use messagehub_core::ai::{llm::OllamaLlm, pipeline::AiPipeline, profile::UserProfile};
+    use messagehub_core::runtime::Runtime;
+
     let args: Vec<String> = std::env::args().skip(1).collect();
     let config_path = parse_config_path(&args);
     let config = load_config(&config_path)?;
@@ -247,17 +313,50 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         &config.password,
     )?));
 
+    // reconcile_channels is sync — lock is held only within the call, released before any await.
     let labels = reconcile_channels(&store, &config.channels)?;
-    eprintln!("runtime-demo: {} channel(s) reconciled into store", labels.len());
-
     let (email_factory, telegram_factory) = build_factories(&config.channels)?;
-    let email_count = email_factory.creds.len();
-    let telegram_count = config.channels.iter().filter(|c| c.kind == "telegram").count();
-    eprintln!(
-        "runtime-demo: factories built — {} email, {} telegram",
-        email_count, telegram_count,
-    );
-    let _ = labels;
-    let _ = telegram_factory;
+
+    let mut builder = Runtime::builder(Arc::clone(&store))
+        .with_factory("Email", email_factory)
+        .with_factory("Telegram", telegram_factory);
+
+    if let Some(ai) = &config.ai {
+        if ai.enabled {
+            let url   = ai.ollama_url.clone().unwrap_or_else(|| "http://localhost:11434".into());
+            let model = ai.model     .clone().unwrap_or_else(|| "llama3.2".into());
+            let llm: Arc<dyn messagehub_core::ai::llm::LlmBackend> =
+                Arc::new(OllamaLlm::new(url.clone(), model.clone()));
+            let pipeline = AiPipeline::new(
+                llm,
+                None, // no retriever in Plan 7a — see spec §Non-Goals
+                UserProfile { content: String::new() },
+            );
+            builder = builder.with_ai_pipeline(Arc::new(pipeline));
+            eprintln!("runtime-demo: AI tier enabled (ollama at {}, model {})", url, model);
+        } else {
+            eprintln!("runtime-demo: AI tier disabled (ingest-only)");
+        }
+    } else {
+        eprintln!("runtime-demo: no [ai] section in config — ingest-only");
+    }
+
+    let mut rt = builder.build();
+    let events = rt.subscribe();
+    rt.start().await?;
+    eprintln!("runtime-demo: runtime started. Ctrl-C to stop.");
+
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            eprintln!("\nruntime-demo: Ctrl-C received, shutting down...");
+        }
+        _ = print_events(events, labels) => {
+            // print_events only returns when the broadcast is closed, which
+            // happens during shutdown. Nothing to do here.
+        }
+    }
+
+    rt.shutdown().await;
+    eprintln!("runtime-demo: shutdown complete");
     Ok(())
 }
