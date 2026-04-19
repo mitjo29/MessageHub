@@ -67,9 +67,14 @@ impl Store {
                 .transpose()?;
             let status = match status_str.as_str() {
                 "healthy"  => crate::runtime::status::ChannelStatus::Healthy,
-                "degraded" => crate::runtime::status::ChannelStatus::Degraded {
-                    attempt: consecutive_failures.max(1),
-                },
+                "degraded" => {
+                    if consecutive_failures == 0 {
+                        return Err(CoreError::Database(rusqlite::Error::InvalidParameterName(
+                            "channel row is 'degraded' but consecutive_failures = 0".to_string(),
+                        )));
+                    }
+                    crate::runtime::status::ChannelStatus::Degraded { attempt: consecutive_failures }
+                }
                 "failed"   => crate::runtime::status::ChannelStatus::Failed {
                     last_error: last_error.clone().unwrap_or_default(),
                 },
@@ -105,10 +110,13 @@ impl Store {
             crate::runtime::status::ChannelStatus::Failed { last_error } => Some(last_error.as_str()),
             _ => None,
         };
-        self.conn().execute(
+        let rows = self.conn().execute(
             "UPDATE channels SET status = ?1, last_error = ?2, consecutive_failures = ?3 WHERE id = ?4",
             params![status.db_str(), last_error, consecutive_failures, id.to_string()],
         )?;
+        if rows == 0 {
+            return Err(CoreError::NotFound { entity: "channel".to_string(), id: id.to_string() });
+        }
         Ok(())
     }
 
@@ -158,5 +166,17 @@ mod tests {
         assert_eq!(cfg.status, ChannelStatus::Failed { last_error: "boom".to_string() });
         assert_eq!(cfg.last_error.as_deref(), Some("boom"));
         assert_eq!(cfg.consecutive_failures, 3);
+    }
+
+    #[test]
+    fn test_update_channel_status_unknown_id_errors() {
+        use crate::runtime::status::ChannelStatus;
+        let store = crate::store::Store::open_in_memory().unwrap();
+        let result = store.update_channel_status(
+            &uuid::Uuid::new_v4(),
+            &ChannelStatus::Healthy,
+            0,
+        );
+        assert!(result.is_err(), "update on unknown id must return Err");
     }
 }

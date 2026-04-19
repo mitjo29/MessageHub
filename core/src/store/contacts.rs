@@ -172,6 +172,21 @@ impl Store {
         address: &str,
         display_name: &str,
     ) -> Result<crate::types::Contact> {
+        self.conn().execute_batch("BEGIN IMMEDIATE;")?;
+        let result = self.find_or_create_contact_by_address_inner(channel, address, display_name);
+        match &result {
+            Ok(_) => self.conn().execute_batch("COMMIT;")?,
+            Err(_) => { let _ = self.conn().execute_batch("ROLLBACK;"); }
+        }
+        result
+    }
+
+    fn find_or_create_contact_by_address_inner(
+        &self,
+        channel: crate::types::Channel,
+        address: &str,
+        display_name: &str,
+    ) -> Result<crate::types::Contact> {
         use crate::types::{Contact, ContactIdentity};
 
         if let Some(existing) = self.find_contact_by_address(channel, address)? {
@@ -189,7 +204,7 @@ impl Store {
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         };
-        self.insert_contact(&contact)?;
+        self.insert_contact_inner(&contact)?;
         Ok(contact)
     }
 
