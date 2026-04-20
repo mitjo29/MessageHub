@@ -1,2 +1,12 @@
 .superpowers/
 target/
+
+# Plan 7a: runtime-demo local config and databases.
+core/messagehub.toml
+core/messagehub.db
+core/messagehub.db-journal
+core/messagehub.db-wal
+messagehub.toml
+messagehub.db
+messagehub.db-journal
+messagehub.db-wal

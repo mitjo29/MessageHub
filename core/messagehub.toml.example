@@ -1,0 +1,40 @@
+# Example configuration for runtime-demo.
+# Copy this file to `messagehub.toml` (same directory) and fill in real values.
+# `messagehub.toml` is gitignored; this `.example` is committed.
+
+# SQLCipher database path (created on first run) and master key.
+database = "./messagehub.db"
+password = "change-me-to-something-unique"
+
+# Optional AI tier. Delete or set `enabled = false` to run ingest-only.
+[ai]
+enabled = false
+# ollama_url = "http://localhost:11434"
+# model = "llama3.2"
+
+# One [[channels]] block per account. `kind` must be "email" or "telegram".
+# Delete or add blocks freely.
+
+[[channels]]
+kind = "email"
+label = "Personal Gmail"
+poll_interval_secs = 30
+enabled = true
+[channels.credentials]
+imap_host = "imap.gmail.com"
+imap_port = 993
+smtp_host = "smtp.gmail.com"
+smtp_port = 587
+username = "me@example.com"
+# For Gmail: generate an app-specific password at myaccount.google.com/apppasswords.
+password = "xxxxxxxxxxxxxxxx"
+mailbox = "INBOX"
+
+[[channels]]
+kind = "telegram"
+label = "My Bot"
+poll_interval_secs = 5
+enabled = true
+[channels.credentials]
+# Create a bot at @BotFather, paste the token here.
+bot_token = "123456:ABC-DEF..."
