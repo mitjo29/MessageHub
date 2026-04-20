@@ -1,10 +1,13 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useReducer,
+  useRef,
   type Dispatch,
   type ReactNode,
 } from "react";
+import { api } from "../api";
 import type {
   MessageRow,
   MessageDetail,
@@ -214,11 +217,110 @@ const InboxContext = createContext<{
   dispatch: Dispatch<InboxAction>;
 } | null>(null);
 
+const PAGE_SIZE = 50;
+const POLL_INTERVAL_MS = 15_000;
+const PERSIST_DEBOUNCE_MS = 200;
+
 export function InboxProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(inboxReducer, initialState, (s) => ({
     ...s,
     panelWidths: loadInitialPanelWidths(),
   }));
+
+  // One-time channels fetch on mount.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const channels = await api.listChannels();
+        if (!cancelled) dispatch({ type: "SET_CHANNELS", channels });
+      } catch (err) {
+        if (!cancelled) dispatch({ type: "SET_ERROR", error: String(err) });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Load messages + counts whenever the filter changes (and on mount).
+  const filterRef = useRef(state.filter);
+  filterRef.current = state.filter;
+
+  useEffect(() => {
+    let cancelled = false;
+    dispatch({ type: "SET_LOADING", loading: true });
+    (async () => {
+      try {
+        const [rows, counts] = await Promise.all([
+          api.listMessages(state.filter, PAGE_SIZE, 0),
+          api.sidebarCounts(),
+        ]);
+        if (cancelled) return;
+        dispatch({
+          type: "LOAD_MESSAGES_SUCCESS",
+          messages: rows,
+          append: false,
+          hasMore: rows.length === PAGE_SIZE,
+        });
+        dispatch({ type: "SET_COUNTS", counts });
+      } catch (err) {
+        if (!cancelled) dispatch({ type: "SET_ERROR", error: String(err) });
+      } finally {
+        if (!cancelled) dispatch({ type: "SET_LOADING", loading: false });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [state.filter]);
+
+  // Poll every POLL_INTERVAL_MS + on window focus. Refetches counts + page 0
+  // only; preserves selection and already-loaded older pages.
+  useEffect(() => {
+    const tick = async () => {
+      try {
+        const [rows, counts] = await Promise.all([
+          api.listMessages(filterRef.current, PAGE_SIZE, 0),
+          api.sidebarCounts(),
+        ]);
+        dispatch({
+          type: "LOAD_MESSAGES_SUCCESS",
+          messages: rows,
+          append: false,
+          hasMore: rows.length === PAGE_SIZE,
+        });
+        dispatch({ type: "SET_COUNTS", counts });
+      } catch {
+        // Silent — polling shouldn't spam the banner.
+      }
+    };
+    const id = window.setInterval(tick, POLL_INTERVAL_MS);
+    const onVis = () => {
+      if (document.visibilityState === "visible") void tick();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, []);
+
+  // Persist panel widths with debounce.
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      try {
+        window.localStorage.setItem(
+          PANEL_WIDTHS_KEY,
+          JSON.stringify(state.panelWidths),
+        );
+      } catch {
+        // localStorage can throw in private-browsing modes; ignore.
+      }
+    }, PERSIST_DEBOUNCE_MS);
+    return () => window.clearTimeout(handle);
+  }, [state.panelWidths]);
+
   return (
     <InboxContext.Provider value={{ state, dispatch }}>
       {children}
