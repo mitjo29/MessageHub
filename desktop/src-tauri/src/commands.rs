@@ -54,6 +54,23 @@ pub struct UiConfig {
     pub channel_count: usize,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelCount {
+    pub channel_type: String,
+    pub total: u64,
+    pub unread: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SidebarCounts {
+    pub all: u64,
+    pub unread: u64,
+    pub priority_high: u64,
+    pub by_channel: Vec<ChannelCount>,
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 /// Build a `MessageRow` DTO from a core `Message`.
@@ -273,6 +290,78 @@ pub fn mark_read(
     store
         .mark_read(&uuid, read)
         .map_err(|e| format!("mark_read failed: {}", e))
+}
+
+/// Return a batched snapshot of sidebar counts: one entry per view + per
+/// channel. One SQL COUNT(*) per field; for ~5 channels that's ~13 cheap
+/// indexed queries, far less flicker than three-plus separate invokes.
+#[tauri::command]
+pub fn sidebar_counts(state: State<'_, AppState>) -> Result<SidebarCounts, String> {
+    let store = state
+        .store
+        .lock()
+        .map_err(|e| format!("store lock poisoned: {}", e))?;
+
+    let all = store
+        .count_messages(&MessageFilter::default())
+        .map_err(|e| format!("count all failed: {}", e))?;
+
+    let unread = store
+        .count_messages(&MessageFilter {
+            unread_only: true,
+            ..Default::default()
+        })
+        .map_err(|e| format!("count unread failed: {}", e))?;
+
+    // Route through Filter::PriorityHigh.to_core() so the ≥4 threshold
+    // stays single-sourced in to_core(); .expect is sound because only
+    // the Channel branch of to_core can fail.
+    let pri_filter = Filter::PriorityHigh
+        .to_core()
+        .expect("PriorityHigh branch is infallible");
+    let priority_high = store
+        .count_messages(&pri_filter)
+        .map_err(|e| format!("count priorityHigh failed: {}", e))?;
+
+    let configs = store
+        .list_channel_configs()
+        .map_err(|e| format!("list_channel_configs failed: {}", e))?;
+
+    let mut by_channel = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for cfg in &configs {
+        if !seen.insert(cfg.channel) {
+            // Multiple configs per channel variant (e.g. two Email accounts)
+            // roll up to the variant level so 7b.2's sidebar has one row
+            // per channel. Multi-account UI is deferred.
+            continue;
+        }
+        let total = store
+            .count_messages(&MessageFilter {
+                channel: Some(cfg.channel),
+                ..Default::default()
+            })
+            .map_err(|e| format!("count channel {} failed: {}", cfg.channel, e))?;
+        let chan_unread = store
+            .count_messages(&MessageFilter {
+                channel: Some(cfg.channel),
+                unread_only: true,
+                ..Default::default()
+            })
+            .map_err(|e| format!("count unread for channel {} failed: {}", cfg.channel, e))?;
+        by_channel.push(ChannelCount {
+            channel_type: cfg.channel.to_db_str().to_string(),
+            total,
+            unread: chan_unread,
+        });
+    }
+
+    Ok(SidebarCounts {
+        all,
+        unread,
+        priority_high,
+        by_channel,
+    })
 }
 
 #[cfg(test)]

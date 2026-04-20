@@ -18,6 +18,7 @@ fn main() {
                     commands::list_channels,
                     commands::get_config,
                     commands::mark_read,
+                    commands::sidebar_counts,
                 ])
                 .run(tauri::generate_context!())
                 .expect("error while running tauri application");
@@ -35,6 +36,7 @@ fn main() {
                     commands::list_channels,
                     commands::get_config,
                     commands::mark_read,
+                    commands::sidebar_counts,
                 ])
                 .run(tauri::generate_context!())
                 .expect("error while running tauri application");
