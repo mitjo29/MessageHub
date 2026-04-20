@@ -113,7 +113,7 @@ pub fn list_messages(
         .map_err(|e| format!("store lock poisoned: {}", e))?;
 
     let messages = store
-        .list_messages(None, false, limit, offset)
+        .list_messages(&messagehub_core::store::MessageFilter::default(), limit, offset)
         .map_err(|e| format!("list_messages failed: {}", e))?;
 
     let rows = messages

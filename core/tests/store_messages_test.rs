@@ -1,4 +1,5 @@
 use chrono::Utc;
+use messagehub_core::store::MessageFilter;
 use messagehub_core::store::Store;
 use messagehub_core::types::*;
 use std::collections::HashMap;
@@ -76,6 +77,23 @@ fn test_insert_and_get_message() {
 }
 
 #[test]
+fn test_list_messages_default_filter_returns_all() {
+    let store = test_store();
+    let contact = make_contact(&store);
+    let thread = make_thread(&store);
+
+    for _ in 0..3 {
+        store
+            .insert_message(&make_message(contact.id, thread.id))
+            .unwrap();
+    }
+
+    let filter = MessageFilter::default();
+    let messages = store.list_messages(&filter, 10, 0).unwrap();
+    assert_eq!(messages.len(), 3);
+}
+
+#[test]
 fn test_list_messages_by_channel() {
     let store = test_store();
     let contact = make_contact(&store);
@@ -87,10 +105,69 @@ fn test_list_messages_by_channel() {
             .unwrap();
     }
 
-    let messages = store
-        .list_messages(Some(Channel::Email), false, 10, 0)
-        .unwrap();
+    let filter = MessageFilter {
+        channel: Some(Channel::Email),
+        ..Default::default()
+    };
+    let messages = store.list_messages(&filter, 10, 0).unwrap();
     assert_eq!(messages.len(), 3);
+
+    let filter_sms = MessageFilter {
+        channel: Some(Channel::Sms),
+        ..Default::default()
+    };
+    let empty = store.list_messages(&filter_sms, 10, 0).unwrap();
+    assert_eq!(empty.len(), 0);
+}
+
+#[test]
+fn test_list_messages_unread_only() {
+    let store = test_store();
+    let contact = make_contact(&store);
+    let thread = make_thread(&store);
+
+    // Two unread, one read.
+    let m1 = make_message(contact.id, thread.id);
+    let m2 = make_message(contact.id, thread.id);
+    let m3 = make_message(contact.id, thread.id);
+    store.insert_message(&m1).unwrap();
+    store.insert_message(&m2).unwrap();
+    store.insert_message(&m3).unwrap();
+    store.mark_read(&m2.id, true).unwrap();
+
+    let filter = MessageFilter {
+        unread_only: true,
+        ..Default::default()
+    };
+    let messages = store.list_messages(&filter, 10, 0).unwrap();
+    assert_eq!(messages.len(), 2);
+    assert!(messages.iter().all(|m| !m.is_read));
+}
+
+#[test]
+fn test_list_messages_min_priority() {
+    let store = test_store();
+    let contact = make_contact(&store);
+    let thread = make_thread(&store);
+
+    // priority is 3 by default via make_message; add one at 5 and one at 1.
+    let mut low = make_message(contact.id, thread.id);
+    low.priority = PriorityScore::new(1);
+    let mut high = make_message(contact.id, thread.id);
+    high.priority = PriorityScore::new(5);
+    let mid = make_message(contact.id, thread.id); // priority=3
+
+    store.insert_message(&low).unwrap();
+    store.insert_message(&mid).unwrap();
+    store.insert_message(&high).unwrap();
+
+    let filter = MessageFilter {
+        min_priority: Some(4),
+        ..Default::default()
+    };
+    let messages = store.list_messages(&filter, 10, 0).unwrap();
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].priority.unwrap().value(), 5);
 }
 
 #[test]

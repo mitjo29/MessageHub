@@ -42,6 +42,7 @@ fn ensure_sqlite_vec_loaded() {
 pub use ai_log::AiDecision;
 pub use drafts::{DraftRecord, NewDraft};
 pub use knowledge::VaultPersonSummary;
+pub use messages::MessageFilter;
 
 pub struct Store {
     conn: Connection,

@@ -5,6 +5,15 @@ use crate::error::{CoreError, Result};
 use crate::store::Store;
 use crate::types::*;
 
+#[derive(Debug, Clone, Default)]
+pub struct MessageFilter {
+    pub channel: Option<Channel>,
+    pub unread_only: bool,
+    /// Inclusive floor on `priority_score`. `None` = any priority (including unset).
+    pub min_priority: Option<u8>,
+    pub archived: bool,
+}
+
 impl Store {
     pub fn insert_message(&self, msg: &Message) -> Result<()> {
         let attachments_json = serde_json::to_string(&msg.content.attachments)?;
@@ -55,19 +64,28 @@ impl Store {
 
     pub fn list_messages(
         &self,
-        channel: Option<Channel>,
-        archived: bool,
+        filter: &MessageFilter,
         limit: u32,
         offset: u32,
     ) -> Result<Vec<Message>> {
         let mut sql = String::from(
-            "SELECT id, channel_type, thread_id, sender_id, content_text, content_html, content_subject, attachments_json, timestamp, metadata_json, priority_score, category, is_read, is_archived FROM messages WHERE is_archived = ?1"
+            "SELECT id, channel_type, thread_id, sender_id, content_text, content_html, \
+             content_subject, attachments_json, timestamp, metadata_json, priority_score, \
+             category, is_read, is_archived FROM messages WHERE is_archived = ?1"
         );
-        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(archived as i32)];
+        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> =
+            vec![Box::new(filter.archived as i32)];
 
-        if let Some(ch) = channel {
-            sql.push_str(" AND channel_type = ?2");
+        if let Some(ch) = filter.channel {
             params_vec.push(Box::new(ch.to_db_str().to_owned()));
+            sql.push_str(&format!(" AND channel_type = ?{}", params_vec.len()));
+        }
+        if filter.unread_only {
+            sql.push_str(" AND is_read = 0");
+        }
+        if let Some(min_p) = filter.min_priority {
+            params_vec.push(Box::new(min_p as i32));
+            sql.push_str(&format!(" AND priority_score IS NOT NULL AND priority_score >= ?{}", params_vec.len()));
         }
 
         let limit_idx = params_vec.len() + 1;
