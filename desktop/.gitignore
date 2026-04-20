@@ -1,0 +1,12 @@
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+
+# Tauri-Rust build artifacts
+src-tauri/target/
+src-tauri/gen/
+
+# Local Tauri config (if we introduce one later)
+*.env
