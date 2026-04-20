@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod commands;
 mod config;
 mod state;
 
@@ -11,6 +12,12 @@ fn main() {
         Ok(app_state) => {
             tauri::Builder::default()
                 .manage(app_state)
+                .invoke_handler(tauri::generate_handler![
+                    commands::list_messages,
+                    commands::get_message,
+                    commands::list_channels,
+                    commands::get_config,
+                ])
                 .run(tauri::generate_context!())
                 .expect("error while running tauri application");
         }
@@ -21,6 +28,12 @@ fn main() {
             eprintln!("messagehub-desktop: {}", err);
             tauri::Builder::default()
                 .manage(InitError(err))
+                .invoke_handler(tauri::generate_handler![
+                    commands::list_messages,
+                    commands::get_message,
+                    commands::list_channels,
+                    commands::get_config,
+                ])
                 .run(tauri::generate_context!())
                 .expect("error while running tauri application");
         }
