@@ -1,4 +1,6 @@
-use serde::Serialize;
+use messagehub_core::store::MessageFilter;
+use messagehub_core::types::Channel;
+use serde::{Deserialize, Serialize};
 use tauri::State;
 use uuid::Uuid;
 
@@ -98,29 +100,65 @@ fn build_message_row(
     }
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum Filter {
+    All,
+    Unread,
+    PriorityHigh,
+    #[serde(rename_all = "camelCase")]
+    Channel { channel_type: String },
+}
+
+impl Filter {
+    fn to_core(&self) -> Result<MessageFilter, String> {
+        Ok(match self {
+            Filter::All => MessageFilter::default(),
+            Filter::Unread => MessageFilter {
+                unread_only: true,
+                ..Default::default()
+            },
+            Filter::PriorityHigh => MessageFilter {
+                min_priority: Some(4),
+                ..Default::default()
+            },
+            Filter::Channel { channel_type } => {
+                let ch = Channel::from_db_str(channel_type)
+                    .ok_or_else(|| format!("unknown channel_type: {}", channel_type))?;
+                MessageFilter {
+                    channel: Some(ch),
+                    ..Default::default()
+                }
+            }
+        })
+    }
+}
+
 // ── commands ──────────────────────────────────────────────────────────────────
 
-/// Return up to `limit` messages starting at `offset`, newest first.
+/// Return up to `limit` messages starting at `offset`, newest first, scoped
+/// by the supplied filter.
 #[tauri::command]
 pub fn list_messages(
+    filter: Filter,
     limit: u32,
     offset: u32,
     state: State<'_, AppState>,
 ) -> Result<Vec<MessageRow>, String> {
+    let core_filter = filter.to_core()?;
+
     let store = state
         .store
         .lock()
         .map_err(|e| format!("store lock poisoned: {}", e))?;
 
-    // TODO(Plan 7b.2 Task 4): accept Filter from frontend instead of defaulting.
     let messages = store
-        .list_messages(&messagehub_core::store::MessageFilter::default(), limit, offset)
+        .list_messages(&core_filter, limit, offset)
         .map_err(|e| format!("list_messages failed: {}", e))?;
 
     let rows = messages
         .iter()
         .map(|msg| {
-            // Resolve sender name: look up the contact; fall back to sender_id string.
             let sender_name = store
                 .get_contact(&msg.sender_id)
                 .map(|c| c.display_name)
@@ -216,4 +254,51 @@ pub fn get_config(state: State<'_, AppState>) -> Result<UiConfig, String> {
         db_path: state.db_path.clone(),
         channel_count,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn filter_all_maps_to_default() {
+        let core = Filter::All.to_core().unwrap();
+        assert!(core.channel.is_none());
+        assert!(!core.unread_only);
+        assert!(core.min_priority.is_none());
+        assert!(!core.archived);
+    }
+
+    #[test]
+    fn filter_unread_sets_flag() {
+        let core = Filter::Unread.to_core().unwrap();
+        assert!(core.unread_only);
+        assert!(core.min_priority.is_none());
+    }
+
+    #[test]
+    fn filter_priority_high_sets_threshold_to_4() {
+        let core = Filter::PriorityHigh.to_core().unwrap();
+        assert_eq!(core.min_priority, Some(4));
+    }
+
+    #[test]
+    fn filter_channel_resolves_known() {
+        let core = Filter::Channel {
+            channel_type: "Email".into(),
+        }
+        .to_core()
+        .unwrap();
+        assert_eq!(core.channel, Some(Channel::Email));
+    }
+
+    #[test]
+    fn filter_channel_rejects_unknown() {
+        let err = Filter::Channel {
+            channel_type: "NotAChannel".into(),
+        }
+        .to_core()
+        .unwrap_err();
+        assert!(err.contains("unknown channel_type"));
+    }
 }
