@@ -68,25 +68,13 @@ impl Store {
         limit: u32,
         offset: u32,
     ) -> Result<Vec<Message>> {
+        let (where_sql, mut params_vec) = build_where_clause(filter);
         let mut sql = String::from(
             "SELECT id, channel_type, thread_id, sender_id, content_text, content_html, \
              content_subject, attachments_json, timestamp, metadata_json, priority_score, \
-             category, is_read, is_archived FROM messages WHERE is_archived = ?1"
+             category, is_read, is_archived FROM messages"
         );
-        let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> =
-            vec![Box::new(filter.archived as i32)];
-
-        if let Some(ch) = filter.channel {
-            params_vec.push(Box::new(ch.to_db_str().to_owned()));
-            sql.push_str(&format!(" AND channel_type = ?{}", params_vec.len()));
-        }
-        if filter.unread_only {
-            sql.push_str(" AND is_read = 0");
-        }
-        if let Some(min_p) = filter.min_priority {
-            params_vec.push(Box::new(min_p as i32));
-            sql.push_str(&format!(" AND priority_score IS NOT NULL AND priority_score >= ?{}", params_vec.len()));
-        }
+        sql.push_str(&where_sql);
 
         let limit_idx = params_vec.len() + 1;
         sql.push_str(&format!(
@@ -234,6 +222,37 @@ mod tests {
         assert_eq!(reloaded.category.as_deref(), Some("work"));
         assert_eq!(reloaded.priority, Some(PriorityScore::new(4).unwrap()));
     }
+}
+
+/// Build a WHERE clause and its bound params from a MessageFilter.
+///
+/// The returned SQL starts with " WHERE is_archived = ?1" and appends
+/// additional AND clauses as needed; the caller concatenates SELECT/ORDER
+/// BY/LIMIT around it. Positional params use `?N` indexed from 1 based on
+/// insertion order.
+fn build_where_clause(
+    filter: &MessageFilter,
+) -> (String, Vec<Box<dyn rusqlite::types::ToSql>>) {
+    let mut sql = String::from(" WHERE is_archived = ?1");
+    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> =
+        vec![Box::new(filter.archived as i32)];
+
+    if let Some(ch) = filter.channel {
+        params.push(Box::new(ch.to_db_str().to_owned()));
+        sql.push_str(&format!(" AND channel_type = ?{}", params.len()));
+    }
+    if filter.unread_only {
+        sql.push_str(" AND is_read = 0");
+    }
+    if let Some(min_p) = filter.min_priority {
+        params.push(Box::new(min_p as i32));
+        sql.push_str(&format!(
+            " AND priority_score IS NOT NULL AND priority_score >= ?{}",
+            params.len()
+        ));
+    }
+
+    (sql, params)
 }
 
 fn row_to_message(row: &rusqlite::Row) -> std::result::Result<Message, CoreError> {

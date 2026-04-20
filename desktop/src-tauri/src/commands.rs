@@ -112,6 +112,7 @@ pub fn list_messages(
         .lock()
         .map_err(|e| format!("store lock poisoned: {}", e))?;
 
+    // TODO(Plan 7b.2 Task 4): accept Filter from frontend instead of defaulting.
     let messages = store
         .list_messages(&messagehub_core::store::MessageFilter::default(), limit, offset)
         .map_err(|e| format!("list_messages failed: {}", e))?;
