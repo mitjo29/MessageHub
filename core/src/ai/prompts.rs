@@ -172,6 +172,30 @@ mod tests {
     }
 
     #[test]
+    fn test_strip_fences_removes_plain_fence() {
+        let raw = "```\n{\"category\":\"Work\",\"priority\":3,\"reasoning\":\"x\"}\n```";
+        assert_eq!(
+            strip_fences(raw),
+            "{\"category\":\"Work\",\"priority\":3,\"reasoning\":\"x\"}",
+        );
+    }
+
+    #[test]
+    fn test_strip_fences_passthrough_when_no_fence() {
+        let raw = "{\"category\":\"Work\",\"priority\":3,\"reasoning\":\"x\"}";
+        assert_eq!(strip_fences(raw), raw);
+    }
+
+    #[test]
+    fn test_strip_fences_tolerates_trailing_whitespace() {
+        let raw = "```json\n{\"category\":\"Work\",\"priority\":3,\"reasoning\":\"x\"}\n```\n  \n";
+        assert_eq!(
+            strip_fences(raw),
+            "{\"category\":\"Work\",\"priority\":3,\"reasoning\":\"x\"}",
+        );
+    }
+
+    #[test]
     fn test_extract_first_json_object_finds_balanced_block() {
         let input = "prefix {\"a\": {\"b\": 1}} suffix";
         assert_eq!(
