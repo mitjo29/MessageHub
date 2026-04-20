@@ -256,6 +256,25 @@ pub fn get_config(state: State<'_, AppState>) -> Result<UiConfig, String> {
     })
 }
 
+/// Flip the `is_read` flag for a message.
+#[tauri::command]
+pub fn mark_read(
+    id: String,
+    read: bool,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let uuid = Uuid::parse_str(&id).map_err(|e| format!("invalid id: {}", e))?;
+
+    let store = state
+        .store
+        .lock()
+        .map_err(|e| format!("store lock poisoned: {}", e))?;
+
+    store
+        .mark_read(&uuid, read)
+        .map_err(|e| format!("mark_read failed: {}", e))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
