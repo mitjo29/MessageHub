@@ -29,21 +29,29 @@ pub struct OllamaLlm {
     client: reqwest::Client,
     base_url: String,
     model: String,
+    timeout_secs: u64,
 }
 
 impl OllamaLlm {
     pub fn new(base_url: String, model: String) -> Self {
+        Self::new_with_timeout(base_url, model, 60)
+    }
+
+    /// Construct with a custom timeout. Used by tests to exercise short timeouts
+    /// without waiting for the default 60s.
+    pub(crate) fn new_with_timeout(base_url: String, model: String, timeout_secs: u64) -> Self {
         // Classification should complete in <500ms on a 3B-param model but
         // cold starts can take several seconds. 60s is generous but not
         // unbounded — callers hang otherwise if the model fails to load.
         let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(60))
+            .timeout(Duration::from_secs(timeout_secs))
             .build()
             .expect("reqwest client builder never fails with default config");
         Self {
             client,
             base_url: base_url.trim_end_matches('/').to_string(),
             model,
+            timeout_secs,
         }
     }
 
@@ -126,7 +134,13 @@ impl LlmBackend for OllamaLlm {
             .json(&req)
             .send()
             .await
-            .map_err(|e| CoreError::Ai(format!("ollama request failed: {}", e)))?;
+            .map_err(|e| {
+                if e.is_timeout() {
+                    CoreError::AiTimeout { timeout_secs: self.timeout_secs }
+                } else {
+                    CoreError::Ai(format!("ollama request failed: {}", e))
+                }
+            })?;
 
         let status = resp.status();
         if !status.is_success() {
@@ -145,5 +159,39 @@ impl LlmBackend for OllamaLlm {
             .map_err(|e| CoreError::Ai(format!("ollama response body is not valid chat JSON: {}", e)))?;
 
         Ok(parsed.message.content)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test]
+    async fn complete_returns_ai_timeout_when_server_is_slow() {
+        let server = MockServer::start().await;
+
+        // Respond after 3s — longer than our 1s test timeout.
+        Mock::given(method("POST"))
+            .and(path("/api/chat"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_delay(std::time::Duration::from_secs(3))
+                    .set_body_json(serde_json::json!({
+                        "message": { "content": "too late" }
+                    })),
+            )
+            .mount(&server)
+            .await;
+
+        let llm = OllamaLlm::new_with_timeout(server.uri(), "test-model".into(), 1);
+        let err = llm.complete("sys", "user", 64).await.unwrap_err();
+
+        assert!(
+            matches!(err, CoreError::AiTimeout { timeout_secs: 1 }),
+            "expected AiTimeout {{timeout_secs: 1}}, got: {:?}",
+            err
+        );
     }
 }

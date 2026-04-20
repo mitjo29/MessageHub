@@ -83,6 +83,28 @@ async fn test_classify_surfaces_llm_error() {
 }
 
 #[tokio::test]
+async fn classify_parses_fenced_json_response() {
+    let llm = Arc::new(ScriptedLlm::new(vec![Ok(
+        "```json\n{\"priority\": 4, \"category\": \"work\", \"reasoning\": \"test\"}\n```".to_string(),
+    )]));
+    let classifier = Classifier::new(llm);
+    let result = classifier
+        .classify(
+            Channel::Email,
+            "Sender",
+            "sender@example.com",
+            "subject",
+            "body",
+            &empty_ctx(),
+        )
+        .await
+        .expect("fenced response should parse");
+
+    assert_eq!(result.category, Category::Work);
+    assert_eq!(result.priority.value(), 4);
+}
+
+#[tokio::test]
 async fn test_classify_surfaces_parse_error() {
     let llm = Arc::new(ScriptedLlm::new(vec![Ok(
         "I think this is work priority 3".to_string(), // not JSON

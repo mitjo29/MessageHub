@@ -41,6 +41,9 @@ pub enum CoreError {
     #[error("ai pipeline error: {0}")]
     Ai(String),
 
+    #[error("ai timeout after {timeout_secs}s")]
+    AiTimeout { timeout_secs: u64 },
+
     #[error("cloud action error: {0}")]
     Cloud(String),
 }
