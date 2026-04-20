@@ -96,6 +96,17 @@ impl Store {
         Ok(messages)
     }
 
+    pub fn count_messages(&self, filter: &MessageFilter) -> Result<u64> {
+        let (where_sql, params_vec) = build_where_clause(filter);
+        let sql = format!("SELECT COUNT(*) FROM messages{}", where_sql);
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
+        let n: i64 = self
+            .conn()
+            .query_row(&sql, param_refs.as_slice(), |row| row.get(0))?;
+        Ok(n as u64)
+    }
+
     /// Return every message in a thread, oldest first.
     ///
     /// Ordering is `timestamp ASC` so the conversation reads naturally

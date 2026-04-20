@@ -199,3 +199,41 @@ fn test_search_messages_fts() {
     let no_results = store.search_messages("nonexistent", 10).unwrap();
     assert!(no_results.is_empty());
 }
+
+#[test]
+fn test_count_messages_default_matches_list_len() {
+    let store = test_store();
+    let contact = make_contact(&store);
+    let thread = make_thread(&store);
+
+    for _ in 0..5 {
+        store
+            .insert_message(&make_message(contact.id, thread.id))
+            .unwrap();
+    }
+
+    let filter = MessageFilter::default();
+    let count = store.count_messages(&filter).unwrap();
+    let list_len = store.list_messages(&filter, 100, 0).unwrap().len() as u64;
+    assert_eq!(count, list_len);
+    assert_eq!(count, 5);
+}
+
+#[test]
+fn test_count_messages_unread_only() {
+    let store = test_store();
+    let contact = make_contact(&store);
+    let thread = make_thread(&store);
+
+    let m1 = make_message(contact.id, thread.id);
+    let m2 = make_message(contact.id, thread.id);
+    store.insert_message(&m1).unwrap();
+    store.insert_message(&m2).unwrap();
+    store.mark_read(&m1.id, true).unwrap();
+
+    let filter = MessageFilter {
+        unread_only: true,
+        ..Default::default()
+    };
+    assert_eq!(store.count_messages(&filter).unwrap(), 1);
+}
