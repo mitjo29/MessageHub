@@ -1,0 +1,6 @@
+# SQLite runtime sidecars — runtime-demo rewrites these constantly
+# and would otherwise trigger a Tauri dev rebuild loop.
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
