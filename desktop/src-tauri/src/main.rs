@@ -22,12 +22,12 @@ fn main() {
                 .expect("error while running tauri application");
         }
         Err(err) => {
-            // For 7b.1 we print to stderr and also open a Tauri window with a
-            // plain error message. Commands will be unreachable because the
-            // state never registered, but the user sees *something*.
+            // Print to stderr and still open a Tauri window. AppState is not
+            // managed, so the commands will return a "state not managed"
+            // error when invoked — the frontend's error banner will surface
+            // that to the user.
             eprintln!("messagehub-desktop: {}", err);
             tauri::Builder::default()
-                .manage(InitError(err))
                 .invoke_handler(tauri::generate_handler![
                     commands::list_messages,
                     commands::get_message,
@@ -40,11 +40,10 @@ fn main() {
     }
 }
 
-struct InitError(String);
-
 fn try_init() -> Result<AppState, String> {
-    let path = config::resolve_config_path()
-        .ok_or_else(|| "messagehub.toml not found (checked ./ and ../core/)".to_string())?;
+    let path = config::resolve_config_path().ok_or_else(|| {
+        "messagehub.toml not found (checked ./, ../core/, ../../core/, core/)".to_string()
+    })?;
     let cfg = config::load_config(&path)?;
     AppState::init(&cfg.database, &cfg.password)
 }
