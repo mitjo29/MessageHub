@@ -45,5 +45,26 @@ fn try_init() -> Result<AppState, String> {
         "messagehub.toml not found (checked ./, ../core/, ../../core/, core/)".to_string()
     })?;
     let cfg = config::load_config(&path)?;
-    AppState::init(&cfg.database, &cfg.password)
+
+    // `cfg.database` in the TOML is typically "./messagehub.db" — relative to
+    // the directory containing messagehub.toml, NOT to the current CWD (which
+    // tauri dev sets to desktop/src-tauri/). Resolve it against the config
+    // file's parent so the path means what the user meant.
+    let db_path = {
+        let raw = std::path::Path::new(&cfg.database);
+        if raw.is_absolute() {
+            raw.to_path_buf()
+        } else {
+            path.parent().unwrap_or_else(|| std::path::Path::new(".")).join(raw)
+        }
+    };
+    let db_path_str = db_path.to_string_lossy().into_owned();
+
+    eprintln!(
+        "messagehub-desktop: config {} → db {}",
+        path.display(),
+        db_path.display(),
+    );
+
+    AppState::init(&db_path_str, &cfg.password)
 }
