@@ -64,6 +64,23 @@ pub trait ChannelAdapter: Send + Sync {
 
     /// Return the channel type this adapter handles.
     fn channel_type(&self) -> Channel;
+
+    /// Return an opaque, serializable representation of this adapter's
+    /// polling cursor (e.g. Telegram's `last_update_id`). Stored by the
+    /// runtime in `channels.last_sync_cursor` and handed back via
+    /// `set_cursor_state` on the next startup.
+    ///
+    /// Default: `None`. Adapters that don't track a cursor (polling by
+    /// timestamp alone is sufficient) leave this alone.
+    async fn cursor_state(&self) -> Option<String> {
+        None
+    }
+
+    /// Restore the cursor from the last run. Called once, after `connect`,
+    /// before the first `fetch_messages`. Default: no-op.
+    async fn set_cursor_state(&mut self, _state: Option<String>) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// Convert a `RawMessage` into a core `Message`.
