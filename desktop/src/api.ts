@@ -1,9 +1,16 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { MessageRow, MessageDetail, ChannelInfo, UiConfig } from "./types";
+import type {
+  MessageRow,
+  MessageDetail,
+  ChannelInfo,
+  UiConfig,
+  Filter,
+  SidebarCounts,
+} from "./types";
 
 export const api = {
-  listMessages: (limit: number, offset: number) =>
-    invoke<MessageRow[]>("list_messages", { limit, offset }),
+  listMessages: (filter: Filter, limit: number, offset: number) =>
+    invoke<MessageRow[]>("list_messages", { filter, limit, offset }),
 
   getMessage: (id: string) =>
     invoke<MessageDetail>("get_message", { id }),
@@ -13,4 +20,10 @@ export const api = {
 
   getConfig: () =>
     invoke<UiConfig>("get_config"),
+
+  markRead: (id: string, read: boolean) =>
+    invoke<void>("mark_read", { id, read }),
+
+  sidebarCounts: () =>
+    invoke<SidebarCounts>("sidebar_counts"),
 };

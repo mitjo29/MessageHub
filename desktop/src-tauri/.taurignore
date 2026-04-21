@@ -1,0 +1,10 @@
+# SQLite runtime sidecars — runtime-demo rewrites these constantly and
+# would otherwise trigger a rebuild loop during `tauri dev`.
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/*.db-journal
+
+# Frontend build output (insurance).
+**/node_modules/
+**/dist/

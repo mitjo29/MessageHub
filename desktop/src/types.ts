@@ -36,3 +36,22 @@ export type UiConfig = {
   db_path: string;
   channel_count: number;
 };
+
+export type Filter =
+  | { kind: "all" }
+  | { kind: "unread" }
+  | { kind: "priorityHigh" }
+  | { kind: "channel"; channelType: string };
+
+export type ChannelCount = {
+  channelType: string;
+  total: number;
+  unread: number;
+};
+
+export type SidebarCounts = {
+  all: number;
+  unread: number;
+  priorityHigh: number;
+  byChannel: ChannelCount[];
+};
