@@ -332,7 +332,7 @@ impl ChannelAdapter for EmailAdapter {
         Ok(())
     }
 
-    async fn fetch_messages(&self, since: Option<DateTime<Utc>>) -> Result<Vec<RawMessage>> {
+    async fn fetch_messages(&mut self, since: Option<DateTime<Utc>>) -> Result<Vec<RawMessage>> {
         if !self.connected {
             return Err(CoreError::Connection("not connected".to_string()));
         }
@@ -486,7 +486,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_without_connect_fails() {
-        let adapter = EmailAdapter::new();
+        let mut adapter = EmailAdapter::new();
         let result = adapter.fetch_messages(None).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not connected"));

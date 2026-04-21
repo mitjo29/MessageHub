@@ -40,7 +40,7 @@ impl ChannelAdapter for Ok0 {
     async fn connect(&mut self, _: &ChannelConfig) -> Result<()> {
         Ok(())
     }
-    async fn fetch_messages(&self, _: Option<DateTime<Utc>>) -> Result<Vec<RawMessage>> {
+    async fn fetch_messages(&mut self, _: Option<DateTime<Utc>>) -> Result<Vec<RawMessage>> {
         Ok(vec![make_raw_msg(Channel::Telegram)])
     }
     async fn send_reply(&self, _: &str, _: &MessageContent) -> Result<()> {
@@ -61,7 +61,7 @@ impl ChannelAdapter for Err0 {
     async fn connect(&mut self, _: &ChannelConfig) -> Result<()> {
         Ok(())
     }
-    async fn fetch_messages(&self, _: Option<DateTime<Utc>>) -> Result<Vec<RawMessage>> {
+    async fn fetch_messages(&mut self, _: Option<DateTime<Utc>>) -> Result<Vec<RawMessage>> {
         Err(CoreError::InvalidInput("always".into()))
     }
     async fn send_reply(&self, _: &str, _: &MessageContent) -> Result<()> {

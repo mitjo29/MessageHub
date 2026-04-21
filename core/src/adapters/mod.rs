@@ -54,7 +54,7 @@ pub trait ChannelAdapter: Send + Sync {
 
     /// Fetch messages received since the given timestamp.
     /// If `since` is `None`, fetch the most recent batch.
-    async fn fetch_messages(&self, since: Option<DateTime<Utc>>) -> Result<Vec<RawMessage>>;
+    async fn fetch_messages(&mut self, since: Option<DateTime<Utc>>) -> Result<Vec<RawMessage>>;
 
     /// Send a reply within an existing thread.
     async fn send_reply(&self, thread_id: &str, content: &MessageContent) -> Result<()>;

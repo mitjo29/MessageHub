@@ -49,7 +49,7 @@ mod tests {
     #[async_trait]
     impl ChannelAdapter for DummyAdapter {
         async fn connect(&mut self, _c: &ChannelConfig) -> Result<()> { Ok(()) }
-        async fn fetch_messages(&self, _s: Option<DateTime<Utc>>) -> Result<Vec<RawMessage>> {
+        async fn fetch_messages(&mut self, _s: Option<DateTime<Utc>>) -> Result<Vec<RawMessage>> {
             Ok(vec![])
         }
         async fn send_reply(&self, _t: &str, _c: &MessageContent) -> Result<()> { Ok(()) }

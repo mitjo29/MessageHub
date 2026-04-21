@@ -68,7 +68,7 @@ impl ChannelAdapter for TelegramAdapter {
         Ok(())
     }
 
-    async fn fetch_messages(&self, _since: Option<DateTime<Utc>>) -> Result<Vec<RawMessage>> {
+    async fn fetch_messages(&mut self, _since: Option<DateTime<Utc>>) -> Result<Vec<RawMessage>> {
         let url = self.api_url("getUpdates")?;
 
         // Use offset to only get new updates
@@ -144,8 +144,13 @@ impl ChannelAdapter for TelegramAdapter {
             }
         }
 
-        // Note: last_update_id should be updated by the caller (Runtime channel task)
-        // after successful processing. For now we track it via metadata.
+        // Advance last_update_id to max(update_id) so the next poll passes
+        // offset = last_update_id + 1 and getUpdates doesn't re-deliver the
+        // same batch. This is load-bearing for dedup — without it every poll
+        // re-fetches everything from the bot's queue.
+        if let Some(max_update_id) = updates.iter().map(|u| u.update_id).max() {
+            self.last_update_id = Some(max_update_id);
+        }
         debug!(count = raw_messages.len(), "telegram messages fetched");
         Ok(raw_messages)
     }
@@ -192,6 +197,23 @@ impl ChannelAdapter for TelegramAdapter {
 
     fn channel_type(&self) -> Channel {
         Channel::Telegram
+    }
+
+    async fn cursor_state(&self) -> Option<String> {
+        self.last_update_id.map(|id| id.to_string())
+    }
+
+    async fn set_cursor_state(&mut self, state: Option<String>) -> Result<()> {
+        self.last_update_id = match state {
+            Some(s) => Some(s.parse::<i64>().map_err(|e| {
+                CoreError::InvalidInput(format!(
+                    "telegram cursor_state must be an integer, got {:?}: {}",
+                    s, e
+                ))
+            })?),
+            None => None,
+        };
+        Ok(())
     }
 }
 
@@ -272,6 +294,37 @@ mod tests {
 
         assert!(adapter.bot_token.is_none());
         assert!(adapter.last_update_id.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_cursor_state_round_trip() {
+        let mut adapter = TelegramAdapter::new();
+
+        // Initially empty.
+        assert_eq!(adapter.cursor_state().await, None);
+
+        // set → get.
+        adapter.set_cursor_state(Some("12345".to_string())).await.unwrap();
+        assert_eq!(adapter.cursor_state().await, Some("12345".to_string()));
+
+        // Clear.
+        adapter.set_cursor_state(None).await.unwrap();
+        assert_eq!(adapter.cursor_state().await, None);
+    }
+
+    #[tokio::test]
+    async fn test_set_cursor_state_rejects_non_integer() {
+        let mut adapter = TelegramAdapter::new();
+        let err = adapter
+            .set_cursor_state(Some("not-a-number".to_string()))
+            .await
+            .expect_err("non-integer must fail");
+        match err {
+            CoreError::InvalidInput(msg) => {
+                assert!(msg.contains("must be an integer"), "got: {msg}");
+            }
+            other => panic!("expected InvalidInput, got {other:?}"),
+        }
     }
 
     #[tokio::test]
