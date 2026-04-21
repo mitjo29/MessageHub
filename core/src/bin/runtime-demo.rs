@@ -312,10 +312,23 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let config_path = parse_config_path(&args);
     let config = load_config(&config_path)?;
 
-    let store = Arc::new(Mutex::new(Store::open(
-        std::path::Path::new(&config.database),
-        &config.password,
-    )?));
+    // Resolve relative DB paths against the TOML's parent dir, not CWD, so
+    // `./messagehub.db` in core/messagehub.toml always means core/messagehub.db
+    // regardless of where `cargo run` is invoked. This matches how the Tauri
+    // host resolves the same field (desktop/src-tauri/src/main.rs).
+    let db_path = {
+        let raw = std::path::Path::new(&config.database);
+        if raw.is_absolute() {
+            raw.to_path_buf()
+        } else {
+            config_path
+                .parent()
+                .unwrap_or_else(|| std::path::Path::new("."))
+                .join(raw)
+        }
+    };
+
+    let store = Arc::new(Mutex::new(Store::open(&db_path, &config.password)?));
 
     // reconcile_channels is sync — lock is held only within the call, released before any await.
     let labels = reconcile_channels(&store, &config.channels)?;
