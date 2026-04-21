@@ -79,6 +79,7 @@ async fn test_facade_handles_three_actions_in_sequence() {
         category: None,
         is_read: false,
         is_archived: false,
+        external_id: None,
     };
     store.insert_message(&msg).unwrap();
     let message_id = msg.id;

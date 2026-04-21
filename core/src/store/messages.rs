@@ -20,8 +20,9 @@ impl Store {
         let metadata_json = serde_json::to_string(&msg.metadata)?;
 
         self.conn().execute(
-            "INSERT INTO messages (id, channel_type, thread_id, sender_id, content_text, content_html, content_subject, attachments_json, timestamp, metadata_json, priority_score, category, is_read, is_archived)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+            "INSERT INTO messages (id, channel_type, thread_id, sender_id, content_text, content_html, content_subject, attachments_json, timestamp, metadata_json, priority_score, category, is_read, is_archived, external_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+             ON CONFLICT(channel_type, external_id) WHERE external_id IS NOT NULL DO NOTHING",
             params![
                 msg.id.to_string(),
                 msg.channel.to_db_str(),
@@ -37,6 +38,7 @@ impl Store {
                 msg.category,
                 msg.is_read as i32,
                 msg.is_archived as i32,
+                msg.external_id,
             ],
         )?;
         Ok(())
@@ -45,7 +47,7 @@ impl Store {
     pub fn get_message(&self, id: &Uuid) -> Result<Message> {
         let id_str = id.to_string();
         let result = self.conn().query_row(
-            "SELECT id, channel_type, thread_id, sender_id, content_text, content_html, content_subject, attachments_json, timestamp, metadata_json, priority_score, category, is_read, is_archived FROM messages WHERE id = ?1",
+            "SELECT id, channel_type, thread_id, sender_id, content_text, content_html, content_subject, attachments_json, timestamp, metadata_json, priority_score, category, is_read, is_archived, external_id FROM messages WHERE id = ?1",
             [&id_str],
             |row| {
                 Ok(row_to_message(row))
@@ -72,7 +74,7 @@ impl Store {
         let mut sql = String::from(
             "SELECT id, channel_type, thread_id, sender_id, content_text, content_html, \
              content_subject, attachments_json, timestamp, metadata_json, priority_score, \
-             category, is_read, is_archived FROM messages"
+             category, is_read, is_archived, external_id FROM messages"
         );
         sql.push_str(&where_sql);
 
@@ -118,7 +120,7 @@ impl Store {
         let mut stmt = self.conn().prepare(
             "SELECT id, channel_type, thread_id, sender_id, content_text, content_html,
                     content_subject, attachments_json, timestamp, metadata_json,
-                    priority_score, category, is_read, is_archived
+                    priority_score, category, is_read, is_archived, external_id
              FROM messages
              WHERE thread_id = ?1
              ORDER BY timestamp ASC
@@ -167,7 +169,7 @@ impl Store {
         let escaped = query.replace('"', "\"\"");
         let fts_query = format!("\"{}\"", escaped);
         let mut stmt = self.conn().prepare(
-            "SELECT m.id, m.channel_type, m.thread_id, m.sender_id, m.content_text, m.content_html, m.content_subject, m.attachments_json, m.timestamp, m.metadata_json, m.priority_score, m.category, m.is_read, m.is_archived
+            "SELECT m.id, m.channel_type, m.thread_id, m.sender_id, m.content_text, m.content_html, m.content_subject, m.attachments_json, m.timestamp, m.metadata_json, m.priority_score, m.category, m.is_read, m.is_archived, m.external_id
              FROM messages_fts fts
              JOIN messages m ON m.rowid = fts.rowid
              WHERE messages_fts MATCH ?1
@@ -223,6 +225,7 @@ mod tests {
             category: None,
             is_read: false,
             is_archived: false,
+            external_id: None,
         };
         store.insert_message(&msg).unwrap();
 
@@ -281,6 +284,7 @@ fn row_to_message(row: &rusqlite::Row) -> std::result::Result<Message, CoreError
     let category: Option<String> = row.get(11).map_err(CoreError::Database)?;
     let is_read: i32 = row.get(12).map_err(CoreError::Database)?;
     let is_archived: i32 = row.get(13).map_err(CoreError::Database)?;
+    let external_id: Option<String> = row.get(14).map_err(CoreError::Database)?;
 
     let channel = Channel::from_db_str(&channel_str).ok_or_else(|| {
         CoreError::InvalidInput(format!("unknown channel: {}", channel_str))
@@ -315,5 +319,6 @@ fn row_to_message(row: &rusqlite::Row) -> std::result::Result<Message, CoreError
         category,
         is_read: is_read != 0,
         is_archived: is_archived != 0,
+        external_id,
     })
 }

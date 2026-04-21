@@ -79,6 +79,7 @@ fn seed(store: &Store) -> (Uuid, Uuid) {
         category: None,
         is_read: false,
         is_archived: false,
+        external_id: None,
     };
     store.insert_message(&m).unwrap();
     (m.id, t)
