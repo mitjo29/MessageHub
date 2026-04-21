@@ -84,6 +84,7 @@ fn make_msg(sender_id: Uuid, thread_id: Uuid) -> Message {
         category: None,
         is_read: false,
         is_archived: false,
+        external_id: None,
     }
 }
 

@@ -26,7 +26,7 @@ impl ChannelAdapter for FlakyAdapter {
     async fn connect(&mut self, _c: &ChannelConfig) -> Result<()> {
         Ok(())
     }
-    async fn fetch_messages(&self, _s: Option<DateTime<Utc>>) -> Result<Vec<RawMessage>> {
+    async fn fetch_messages(&mut self, _s: Option<DateTime<Utc>>) -> Result<Vec<RawMessage>> {
         if self.fail_remaining.load(Ordering::SeqCst) > 0 {
             self.fail_remaining.fetch_sub(1, Ordering::SeqCst);
             return Err(CoreError::InvalidInput("boom".to_string()));

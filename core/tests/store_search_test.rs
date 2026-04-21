@@ -56,6 +56,7 @@ fn seed_messages(store: &Store) {
             category: None,
             is_read: false,
             is_archived: false,
+            external_id: None,
         };
         store.insert_message(&msg).unwrap();
     }

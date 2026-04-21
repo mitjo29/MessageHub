@@ -104,7 +104,7 @@ impl ChannelAdapter for MockAdapter {
         Ok(())
     }
 
-    async fn fetch_messages(&self, since: Option<DateTime<Utc>>) -> Result<Vec<RawMessage>> {
+    async fn fetch_messages(&mut self, since: Option<DateTime<Utc>>) -> Result<Vec<RawMessage>> {
         if *self.fail_fetch.lock().unwrap() {
             return Err(crate::error::CoreError::Channel(
                 "mock fetch failure".to_string(),

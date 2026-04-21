@@ -54,7 +54,7 @@ pub trait ChannelAdapter: Send + Sync {
 
     /// Fetch messages received since the given timestamp.
     /// If `since` is `None`, fetch the most recent batch.
-    async fn fetch_messages(&self, since: Option<DateTime<Utc>>) -> Result<Vec<RawMessage>>;
+    async fn fetch_messages(&mut self, since: Option<DateTime<Utc>>) -> Result<Vec<RawMessage>>;
 
     /// Send a reply within an existing thread.
     async fn send_reply(&self, thread_id: &str, content: &MessageContent) -> Result<()>;
@@ -64,6 +64,23 @@ pub trait ChannelAdapter: Send + Sync {
 
     /// Return the channel type this adapter handles.
     fn channel_type(&self) -> Channel;
+
+    /// Return an opaque, serializable representation of this adapter's
+    /// polling cursor (e.g. Telegram's `last_update_id`). Stored by the
+    /// runtime in `channels.last_sync_cursor` and handed back via
+    /// `set_cursor_state` on the next startup.
+    ///
+    /// Default: `None`. Adapters that don't track a cursor (polling by
+    /// timestamp alone is sufficient) leave this alone.
+    async fn cursor_state(&self) -> Option<String> {
+        None
+    }
+
+    /// Restore the cursor from the last run. Called once, after `connect`,
+    /// before the first `fetch_messages`. Default: no-op.
+    async fn set_cursor_state(&mut self, _state: Option<String>) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// Convert a `RawMessage` into a core `Message`.
@@ -99,6 +116,7 @@ pub fn normalize(raw: RawMessage, sender_id: Uuid, thread_id: Uuid) -> Message {
         category: None,
         is_read: false,
         is_archived: false,
+        external_id: Some(raw.external_id),
     }
 }
 

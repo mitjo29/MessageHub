@@ -327,6 +327,7 @@ mod classify_stored_tests {
             category: None,
             is_read: false,
             is_archived: false,
+            external_id: None,
         };
         let id = msg.id;
         store.insert_message(&msg).unwrap();

@@ -58,6 +58,7 @@ fn make_message(sender_id: Uuid, thread_id: Uuid) -> Message {
         category: Some("work".into()),
         is_read: false,
         is_archived: false,
+        external_id: None,
     }
 }
 
@@ -236,4 +237,61 @@ fn test_count_messages_unread_only() {
         ..Default::default()
     };
     assert_eq!(store.count_messages(&filter).unwrap(), 1);
+}
+
+#[test]
+fn test_insert_message_persists_external_id() {
+    let store = test_store();
+    let contact = make_contact(&store);
+    let thread = make_thread(&store);
+
+    let mut msg = make_message(contact.id, thread.id);
+    msg.external_id = Some("ext-abc-123".into());
+    store.insert_message(&msg).unwrap();
+
+    let loaded = store.get_message(&msg.id).unwrap();
+    assert_eq!(loaded.external_id, Some("ext-abc-123".into()));
+}
+
+#[test]
+fn test_insert_message_dedups_on_external_id() {
+    let store = test_store();
+    let contact = make_contact(&store);
+    let thread = make_thread(&store);
+
+    let mut m1 = make_message(contact.id, thread.id);
+    m1.external_id = Some("tg-42".into());
+    let mut m2 = make_message(contact.id, thread.id);
+    m2.external_id = Some("tg-42".into()); // same external_id, different UUID
+
+    store.insert_message(&m1).unwrap();
+    store.insert_message(&m2).unwrap(); // must not error; must not insert
+
+    let filter = MessageFilter::default();
+    let all = store.list_messages(&filter, 10, 0).unwrap();
+    assert_eq!(
+        all.len(),
+        1,
+        "second insert should have been deduped"
+    );
+    assert_eq!(all[0].id, m1.id, "first-write-wins — m2 is silently dropped");
+}
+
+#[test]
+fn test_insert_message_null_external_id_does_not_collide() {
+    let store = test_store();
+    let contact = make_contact(&store);
+    let thread = make_thread(&store);
+
+    // Two messages, both external_id = None — must both be insertable.
+    let m1 = make_message(contact.id, thread.id);
+    let m2 = make_message(contact.id, thread.id);
+    assert!(m1.external_id.is_none());
+    assert!(m2.external_id.is_none());
+
+    store.insert_message(&m1).unwrap();
+    store.insert_message(&m2).unwrap();
+
+    let filter = MessageFilter::default();
+    assert_eq!(store.list_messages(&filter, 10, 0).unwrap().len(), 2);
 }

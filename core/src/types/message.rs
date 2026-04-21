@@ -17,6 +17,8 @@ pub struct Message {
     pub category: Option<String>,
     pub is_read: bool,
     pub is_archived: bool,
+    #[serde(default)]
+    pub external_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
