@@ -77,6 +77,17 @@ async fn run_channel_task(
 
     info!(%channel_id, label = %config.label, "channel task: starting");
 
+    // Restore the adapter's last cursor (Telegram last_update_id, etc.).
+    // Fresh channels have last_sync_cursor = None; the adapter default
+    // (e.g. TelegramAdapter::last_update_id = None) then kicks in and
+    // getUpdates starts from the bot's oldest queued update.
+    if let Err(e) = adapter
+        .set_cursor_state(config.last_sync_cursor.clone())
+        .await
+    {
+        warn!(%channel_id, error = %e, "channel task: cursor hydration failed; continuing with adapter default");
+    }
+
     loop {
         let delay_secs = backoff.next_delay_secs(config.poll_interval_secs, &mut rng);
 
@@ -110,11 +121,16 @@ async fn run_channel_task(
                     break;
                 }
 
-                // Persist cursor under a brief lock — no await inside this block.
+                // Capture the adapter's cursor BEFORE we grab the store
+                // lock — cursor_state is async and mutex must not be held
+                // across .await.
+                let cursor_after = adapter.cursor_state().await;
+
+                // Persist cursor + timestamp under a brief lock — no await.
                 if let Some(ts) = latest_ts {
                     {
                         let guard = store.lock().expect("channel_task: store mutex poisoned");
-                        if let Err(e) = guard.update_sync_state(&channel_id, None, ts) {
+                        if let Err(e) = guard.update_sync_state(&channel_id, cursor_after.as_deref(), ts) {
                             warn!(%channel_id, error = %e, "channel task: failed to persist cursor");
                         }
                     } // lock released here
