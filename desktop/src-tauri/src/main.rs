@@ -74,7 +74,7 @@ fn try_init() -> Result<AppState, String> {
     // skipped — no send path for them in 7b.3.
     let mut email_connections = std::collections::HashMap::new();
     for entry in &cfg.channels {
-        if entry.kind == "email" {
+        if entry.kind == "email" && entry.enabled {
             let creds: crate::config::EmailCredentials = entry
                 .credentials
                 .clone()

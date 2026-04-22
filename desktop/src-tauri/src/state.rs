@@ -82,6 +82,9 @@ impl AppState {
                         .map_err(|e| format!("Redactor::build: {}", e))?;
                     let provider: Arc<dyn CloudProvider> =
                         Arc::new(AnthropicCloud::new(api_key.clone(), model.clone()));
+                    // TODO(7b.3 follow-up): load real UserProfile from vault. Empty profile
+                    // here means drafts lack personalization signal — see Plan 7b.4+ for
+                    // where this should be wired in.
                     let actions = CloudActions::new(
                         provider,
                         redactor,
