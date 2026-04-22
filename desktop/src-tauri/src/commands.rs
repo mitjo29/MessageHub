@@ -71,6 +71,28 @@ pub struct SidebarCounts {
     pub by_channel: Vec<ChannelCount>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplyDraftDto {
+    pub thread_id: String,
+    pub in_reply_to_message_id: String,
+    pub body: String,
+    pub subject: Option<String>,
+    pub updated_at: String,
+}
+
+impl From<&messagehub_core::store::ReplyDraft> for ReplyDraftDto {
+    fn from(d: &messagehub_core::store::ReplyDraft) -> Self {
+        Self {
+            thread_id: d.thread_id.to_string(),
+            in_reply_to_message_id: d.in_reply_to_message_id.to_string(),
+            body: d.body.clone(),
+            subject: d.subject.clone(),
+            updated_at: d.updated_at.to_rfc3339(),
+        }
+    }
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 /// Build a `MessageRow` DTO from a core `Message`.
@@ -364,6 +386,53 @@ pub fn sidebar_counts(state: State<'_, AppState>) -> Result<SidebarCounts, Strin
     })
 }
 
+#[tauri::command]
+pub fn save_reply_draft(
+    thread_id: String,
+    in_reply_to_message_id: String,
+    body: String,
+    subject: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let thread = Uuid::parse_str(&thread_id).map_err(|e| format!("bad thread_id: {}", e))?;
+    let msg = Uuid::parse_str(&in_reply_to_message_id)
+        .map_err(|e| format!("bad in_reply_to_message_id: {}", e))?;
+    let store = state.store.lock().map_err(|e| format!("store lock: {}", e))?;
+    store
+        .upsert_reply_draft(&messagehub_core::store::NewReplyDraft {
+            thread_id: thread,
+            in_reply_to_message_id: msg,
+            body: &body,
+            subject: subject.as_deref(),
+        })
+        .map_err(|e| format!("upsert_reply_draft: {}", e))
+}
+
+#[tauri::command]
+pub fn get_reply_draft(
+    thread_id: String,
+    state: State<'_, AppState>,
+) -> Result<Option<ReplyDraftDto>, String> {
+    let thread = Uuid::parse_str(&thread_id).map_err(|e| format!("bad thread_id: {}", e))?;
+    let store = state.store.lock().map_err(|e| format!("store lock: {}", e))?;
+    let draft = store
+        .get_reply_draft(&thread)
+        .map_err(|e| format!("get_reply_draft: {}", e))?;
+    Ok(draft.as_ref().map(ReplyDraftDto::from))
+}
+
+#[tauri::command]
+pub fn delete_reply_draft(
+    thread_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let thread = Uuid::parse_str(&thread_id).map_err(|e| format!("bad thread_id: {}", e))?;
+    let store = state.store.lock().map_err(|e| format!("store lock: {}", e))?;
+    store
+        .delete_reply_draft(&thread)
+        .map_err(|e| format!("delete_reply_draft: {}", e))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -408,5 +477,24 @@ mod tests {
         .to_core()
         .unwrap_err();
         assert!(err.contains("unknown channel_type"));
+    }
+
+    #[test]
+    fn reply_draft_dto_round_trips() {
+        use messagehub_core::store::ReplyDraft;
+        use chrono::TimeZone;
+
+        let d = ReplyDraft {
+            thread_id: Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap(),
+            in_reply_to_message_id: Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap(),
+            body: "hi".to_string(),
+            subject: Some("Re: ping".to_string()),
+            updated_at: chrono::Utc.with_ymd_and_hms(2026, 4, 21, 10, 0, 0).unwrap(),
+        };
+        let dto = ReplyDraftDto::from(&d);
+        assert_eq!(dto.thread_id, "00000000-0000-0000-0000-000000000001");
+        assert_eq!(dto.body, "hi");
+        assert_eq!(dto.subject.as_deref(), Some("Re: ping"));
+        assert!(dto.updated_at.starts_with("2026-04-21T10:00:00"));
     }
 }

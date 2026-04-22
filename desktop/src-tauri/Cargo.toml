@@ -17,6 +17,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros"] }
 toml = "0.8"
 uuid = { version = "1", features = ["v4", "v5", "serde"] }
 
+chrono = { version = "0.4", features = ["serde"] }
 messagehub-core = { path = "../../core" }
 
 [features]
