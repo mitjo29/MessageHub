@@ -52,6 +52,20 @@ export function MessageDetail() {
         </span>
         <span className="sender">{detail.sender_name}</span>
         <span className="time">{formatTime(detail.timestamp)}</span>
+        {detail.channel === "Email" && (
+          <button
+            className="message-detail-reply"
+            onClick={() =>
+              dispatch({
+                type: "OPEN_REPLY",
+                messageId: detail.id,
+                threadId: detail.thread_id,
+              })
+            }
+          >
+            Reply
+          </button>
+        )}
       </div>
       <h2 className="detail-subject">{detail.subject ?? "(no subject)"}</h2>
       <div className="detail-meta">

@@ -3,6 +3,7 @@ import { Sidebar } from "./components/Sidebar";
 import { SplitPane } from "./components/SplitPane";
 import { MessageList } from "./components/MessageList";
 import { MessageDetail } from "./components/MessageDetail";
+import { ReplyModal } from "./components/ReplyModal";
 
 const MIN = { sidebar: 160, list: 260, detail: 320 };
 const HANDLE_PX = 6;
@@ -67,6 +68,13 @@ function InboxLayout() {
         />
         <MessageDetail />
       </div>
+      {state.replyFor != null && (
+        <ReplyModal
+          messageId={state.replyFor.messageId}
+          threadId={state.replyFor.threadId}
+          onClose={() => dispatch({ type: "CLOSE_REPLY" })}
+        />
+      )}
     </div>
   );
 }

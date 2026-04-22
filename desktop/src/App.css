@@ -224,3 +224,129 @@ body {
   margin-top: 1rem;
   font-size: 0.85rem;
 }
+
+.reply-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.reply-modal {
+  background: var(--surface, #1e1e1e);
+  color: var(--text, #ddd);
+  border: 1px solid var(--border, #333);
+  border-radius: 8px;
+  width: min(820px, 90vw);
+  height: min(560px, 85vh);
+  display: grid;
+  grid-template-columns: 1fr 240px;
+  gap: 0;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.reply-modal-compose {
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  min-width: 0;
+}
+
+.reply-modal-subject {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border, #333);
+  padding: 6px 4px;
+  font-size: 14px;
+  color: var(--text, #ddd);
+}
+
+.reply-modal-error {
+  background: #3a1e1e;
+  border: 1px solid #6b3434;
+  color: #f0b0b0;
+  padding: 8px 10px;
+  margin: 8px 0;
+  border-radius: 4px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.reply-modal-error-dismiss {
+  background: transparent;
+  border: 0;
+  color: #f0b0b0;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.reply-modal-body {
+  flex: 1;
+  background: var(--bg, #111);
+  border: 1px solid var(--border, #333);
+  border-radius: 4px;
+  padding: 10px;
+  color: var(--text, #ddd);
+  font-family: inherit;
+  font-size: 13px;
+  resize: none;
+  margin-top: 8px;
+}
+
+.reply-modal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.reply-modal-send {
+  background: #4a6bcc;
+  color: white;
+  border: 0;
+  padding: 6px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.reply-modal-send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.reply-modal-discard,
+.reply-modal-cancel {
+  background: transparent;
+  color: var(--text-muted, #bbb);
+  border: 1px solid var(--border, #333);
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.reply-modal-aside {
+  background: var(--surface-alt, #161616);
+  border-left: 1px solid var(--border, #333);
+  padding: 12px;
+  overflow: auto;
+}
+
+.reply-modal-ai-stub {
+  color: var(--text-muted, #888);
+  font-size: 12px;
+}
+
+.message-detail-reply {
+  background: #4a6bcc;
+  color: white;
+  border: 0;
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
