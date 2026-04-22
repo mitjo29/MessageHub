@@ -1,5 +1,5 @@
 //! TOML config loader. Reuses the schema from runtime-demo — the
-//! `[ai]` and `[[channels]]` sections are ignored here.
+//! `[cloud]` and `[[channels]]` sections are now parsed here.
 
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -7,6 +7,41 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Deserialize)]
 pub struct DesktopConfig {
     pub database: String,
+    pub password: String,
+    #[serde(default)]
+    pub cloud: Option<TauriCloudConfig>,
+    #[serde(default)]
+    pub channels: Vec<ChannelEntry>,
+}
+
+/// Cloud / AI config block (`[cloud]` in messagehub.toml).
+/// Named `TauriCloudConfig` to avoid collision with
+/// `messagehub_core::ai::cloud::CloudConfig`.
+#[derive(Debug, Deserialize)]
+pub struct TauriCloudConfig {
+    pub enabled: bool,
+    pub api_key: Option<String>,
+    pub model: Option<String>,
+}
+
+/// One entry in the `[[channels]]` array.
+#[derive(Debug, Deserialize)]
+pub struct ChannelEntry {
+    pub kind: String,
+    pub label: String,
+    pub enabled: bool,
+    pub credentials: toml::Value,
+}
+
+/// Credential shape for `kind = "email"` channels.
+/// `Clone` is required so it can be stored in a HashMap (Task 9).
+#[derive(Debug, Deserialize, Clone)]
+pub struct EmailCredentials {
+    pub imap_host: String,
+    pub imap_port: u16,
+    pub smtp_host: String,
+    pub smtp_port: u16,
+    pub username: String,
     pub password: String,
 }
 
