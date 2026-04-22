@@ -1,4 +1,4 @@
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Utc};
 use rusqlite::{params, OptionalExtension};
 use uuid::Uuid;
 
@@ -73,7 +73,9 @@ impl Store {
                     .map_err(|e| CoreError::InvalidInput(e.to_string()))?,
                 body,
                 subject,
-                updated_at: parse_sqlite_ts(&updated_at)?,
+                updated_at: chrono::DateTime::parse_from_rfc3339(&updated_at)
+                    .map_err(|e| CoreError::InvalidInput(format!("bad updated_at '{}': {}", updated_at, e)))?
+                    .with_timezone(&Utc),
             })),
         }
     }
@@ -86,13 +88,4 @@ impl Store {
         )?;
         Ok(())
     }
-}
-
-/// Parse the `%Y-%m-%dT%H:%M:%SZ` format emitted by the SQLite `strftime`
-/// default. Returns `CoreError::InvalidInput` on malformed values (should
-/// never happen — writes go through the same format).
-fn parse_sqlite_ts(s: &str) -> Result<DateTime<Utc>> {
-    let naive = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%SZ")
-        .map_err(|e| CoreError::InvalidInput(format!("bad updated_at '{}': {}", s, e)))?;
-    Ok(Utc.from_utc_datetime(&naive))
 }
