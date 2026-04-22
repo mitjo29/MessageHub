@@ -70,5 +70,27 @@ fn try_init() -> Result<AppState, String> {
         db_path.display(),
     );
 
-    AppState::init(&db_path_str, &cfg.password)
+    // Build email-connections map from [[channels]]. Telegram entries are
+    // skipped — no send path for them in 7b.3.
+    let mut email_connections = std::collections::HashMap::new();
+    for entry in &cfg.channels {
+        if entry.kind == "email" {
+            let creds: crate::config::EmailCredentials = entry
+                .credentials
+                .clone()
+                .try_into()
+                .map_err(|e: toml::de::Error| format!("channel '{}': {}", entry.label, e))?;
+            let id = crate::state::stable_channel_id(&entry.kind, &entry.label);
+            email_connections.insert(id, crate::state::EmailConnection {
+                imap_host: creds.imap_host,
+                imap_port: creds.imap_port,
+                smtp_host: creds.smtp_host,
+                smtp_port: creds.smtp_port,
+                username: creds.username,
+                password: creds.password,
+            });
+        }
+    }
+
+    AppState::init(&db_path_str, &cfg.password, email_connections, cfg.cloud.as_ref())
 }
