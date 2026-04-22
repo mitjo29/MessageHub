@@ -205,20 +205,13 @@ impl Store {
 ...`. `delete_reply_draft` is idempotent. Re-exported through `store/mod.rs`
 as `ReplyDraft` and `NewReplyDraft`.
 
-### `store/drafts.rs` (existing, extended)
+### `store/drafts.rs` — no core changes needed
 
-One new helper for the prior-drafts dropdown:
-
-```rust
-pub fn list_drafts_for_message(
-    &self,
-    message_id: &Uuid,
-    action_type: &str,   // "draft_reply"
-    limit: u32,
-) -> Result<Vec<AiDecision>>;
-```
-
-Backed by the existing `idx_ai_drafts_message` index. No schema changes.
+`Store::list_drafts_for_message(message_id) -> Result<Vec<DraftRecord>>`
+already exists (returns everything anchored to `message_id`, newest first,
+via `idx_ai_drafts_message`). The `list_ai_drafts` Tauri command filters
+the result by `action_type == "draft_reply"` in-memory — per-message draft
+counts are small enough (<20) that a SQL-level filter is unnecessary.
 
 ### `adapters/email.rs` — `send_reply` update
 
@@ -313,7 +306,7 @@ degraded state as no section).
 | `delete_reply_draft` | `(thread_id) -> Result<(), String>` | Called on explicit Discard. Internally also called after a successful send. |
 | `send_email_reply` | `(thread_id, in_reply_to_message_id, body, subject) -> Result<(), String>` | Build `ReplyHeaders`, spin up a throwaway `EmailAdapter`, send, delete the draft row. See **Send Path** below. |
 | `ai_draft_reply` | `(message_id, redact) -> Result<AiDraftDto, String>` where `AiDraftDto = { body, confidence, draft_id }` | Thin wrapper: resolves `CloudActions` from `AppState` (errors if `None`), calls `draft_reply(... CloudConfig { redact })`, returns the outcome. |
-| `list_ai_drafts` | `(message_id) -> Result<Vec<AiDraftSummaryDto>, String>` | Calls `Store::list_drafts_for_message(message_id, "draft_reply", 10)`, maps each `AiDecision` to `{ id, created_at, confidence, preview, has_user_edit }`. |
+| `list_ai_drafts` | `(message_id) -> Result<Vec<AiDraftSummaryDto>, String>` | Calls `Store::list_drafts_for_message(message_id)`, retains only rows whose `action_type == "draft_reply"`, maps each `DraftRecord` to `{ id, created_at, confidence, preview, has_user_edit }`. |
 | `cloud_config_status` | `() -> CloudStatusDto = { configured, model }` | Reads `AppState.cloud` to tell the UI whether the panel should render enabled. |
 
 ### Send Path — `send_email_reply` step by step
@@ -511,9 +504,9 @@ correctness load; frontend is manual UAT.
 
 | File | Added case |
 |---|---|
-| `store_drafts_test.rs` | `list_drafts_for_message`: insert 3 `ai_drafts` rows with distinct `created_at`s, verify `DESC` order + `limit` respected. |
+| `store_drafts_test.rs` | Already covers `list_drafts_for_message` ordering; no new case needed. |
 | `cloud_draft_test.rs` | Regenerate: calling `draft_reply` twice against the same `message_id` inserts two `ai_drafts` rows. (Extends the existing wiremock-backed test.) |
-| `desktop/src-tauri/src/commands.rs` (`#[cfg(test)]` module) | DTO unit tests: `AiDraftSummaryDto::from(&AiDecision)` and `ReplyDraftDto::from(&ReplyDraft)` are pure mappers and get direct tests. Full Tauri-handler tests stay out — they need a real `State<AppState>` and are covered by manual UAT. |
+| `desktop/src-tauri/src/commands.rs` (`#[cfg(test)]` module) | DTO unit tests: `AiDraftSummaryDto::from(&DraftRecord)` and `ReplyDraftDto::from(&ReplyDraft)` are pure mappers and get direct tests. Full Tauri-handler tests stay out — they need a real `State<AppState>` and are covered by manual UAT. |
 
 No new `dev-dependencies`. `wiremock` already covers the Anthropic mock path.
 
