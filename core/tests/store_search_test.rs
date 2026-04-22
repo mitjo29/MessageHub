@@ -49,6 +49,7 @@ fn seed_messages(store: &Store) {
                 html: None,
                 subject: Some(subject.into()),
                 attachments: vec![],
+                reply_headers: None,
             },
             timestamp: Utc::now(),
             metadata: HashMap::new(),

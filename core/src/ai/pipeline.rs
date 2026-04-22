@@ -320,6 +320,7 @@ mod classify_stored_tests {
                 html: None,
                 subject: None,
                 attachments: vec![],
+                reply_headers: None,
             },
             timestamp: chrono::Utc::now(),
             metadata: std::collections::HashMap::new(),

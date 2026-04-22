@@ -218,6 +218,7 @@ mod tests {
                 html: None,
                 subject: None,
                 attachments: vec![],
+                reply_headers: None,
             },
             timestamp: chrono::Utc::now(),
             metadata: HashMap::new(),
@@ -310,6 +311,7 @@ fn row_to_message(row: &rusqlite::Row) -> std::result::Result<Message, CoreError
             html: content_html,
             subject: content_subject,
             attachments,
+            reply_headers: None,
         },
         timestamp: chrono::DateTime::parse_from_rfc3339(&timestamp_str)
             .map_err(|e| CoreError::InvalidInput(e.to_string()))?

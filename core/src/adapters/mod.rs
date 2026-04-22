@@ -109,6 +109,7 @@ pub fn normalize(raw: RawMessage, sender_id: Uuid, thread_id: Uuid) -> Message {
             html: raw.html,
             subject: raw.subject,
             attachments,
+            reply_headers: None,
         },
         timestamp: raw.timestamp,
         metadata: raw.metadata,

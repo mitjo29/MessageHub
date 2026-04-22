@@ -72,6 +72,7 @@ fn seed(store: &Store) -> (Uuid, Uuid) {
             html: None,
             subject: Some("Meeting".into()),
             attachments: vec![],
+            reply_headers: None,
         },
         timestamp: Utc::now(),
         metadata: HashMap::new(),

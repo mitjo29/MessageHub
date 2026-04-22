@@ -77,6 +77,7 @@ fn seed_thread(store: &Store) -> (Uuid, Uuid) {
                 html: None,
                 subject: Some("Project X".into()),
                 attachments: vec![],
+                reply_headers: None,
             },
             timestamp: Utc::now() + chrono::Duration::seconds(i as i64),
             metadata: HashMap::new(),

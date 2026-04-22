@@ -45,6 +45,7 @@ fn make_message(
             html: None,
             subject: Some("subj".into()),
             attachments: vec![],
+            reply_headers: None,
         },
         timestamp: Utc::now(),
         metadata: HashMap::new(),

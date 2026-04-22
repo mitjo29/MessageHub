@@ -152,6 +152,7 @@ mod tests {
                 html: None,
                 subject: Some("Test subject".to_string()),
                 attachments: vec![],
+                reply_headers: None,
             },
             timestamp: chrono::Utc::now(),
             metadata: HashMap::new(),

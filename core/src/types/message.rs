@@ -27,6 +27,25 @@ pub struct MessageContent {
     pub html: Option<String>,
     pub subject: Option<String>,
     pub attachments: Vec<Attachment>,
+    /// Set on outbound messages the Tauri layer produces for replies;
+    /// always `None` for messages ingested from adapters.
+    #[serde(default)]
+    pub reply_headers: Option<ReplyHeaders>,
+}
+
+/// Threading metadata for an outbound reply. When present, the email adapter
+/// renders `In-Reply-To` / `References` / a fresh `Message-ID` so the reply
+/// threads in the recipient's client. Inbound messages always have this as
+/// `None`.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct ReplyHeaders {
+    /// RFC 5322 destination address, typically the original sender.
+    pub to: String,
+    /// The original message's Message-ID (bare — no `<...>` wrapping needed).
+    pub in_reply_to: String,
+    /// Existing References chain + the original's Message-ID appended. Bare
+    /// ids, one per Vec entry; the adapter wraps each in `<...>`.
+    pub references: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

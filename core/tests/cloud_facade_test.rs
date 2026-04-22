@@ -72,6 +72,7 @@ async fn test_facade_handles_three_actions_in_sequence() {
             html: None,
             subject: Some("T".into()),
             attachments: vec![],
+            reply_headers: None,
         },
         timestamp: Utc::now(),
         metadata: HashMap::new(),

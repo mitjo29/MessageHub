@@ -77,6 +77,7 @@ fn make_msg(sender_id: Uuid, thread_id: Uuid) -> Message {
             html: None,
             subject: Some("Project X update".to_string()),
             attachments: vec![],
+            reply_headers: None,
         },
         timestamp: Utc::now(),
         metadata: HashMap::new(),
