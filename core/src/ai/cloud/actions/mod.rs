@@ -82,6 +82,48 @@ impl CloudActions {
         .await
     }
 
+    /// Async variant of `draft_reply` that owns its store-access discipline.
+    /// The existing `draft_reply(&Store, ...)` forces callers to hold a
+    /// `std::sync::MutexGuard<Store>` across the HTTP await, which is `!Send`
+    /// and breaks async Tauri commands. This wrapper moves the whole call
+    /// onto a `spawn_blocking` task that builds a current-thread tokio
+    /// runtime internally, locks the mutex in that scope, and block_ons the
+    /// async call. The outer future stays Send.
+    pub async fn draft_reply_via(
+        &self,
+        store: std::sync::Arc<std::sync::Mutex<Store>>,
+        message_id: Uuid,
+        cfg: CloudConfig,
+    ) -> Result<DraftOutcome> {
+        let provider = self.provider.clone();
+        let redactor = self.redactor.clone();
+        let retriever = self.retriever.clone();
+        let profile = self.profile.clone();
+        let model = self.model.clone();
+
+        tokio::task::spawn_blocking(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| crate::error::CoreError::Channel(format!("runtime: {}", e)))?;
+            let guard = store.lock().map_err(|e| {
+                crate::error::CoreError::Channel(format!("store mutex poisoned: {}", e))
+            })?;
+            rt.block_on(draft::draft_reply(
+                &*guard,
+                provider,
+                &redactor,
+                retriever.as_ref(),
+                &profile,
+                message_id,
+                cfg,
+                &model,
+            ))
+        })
+        .await
+        .map_err(|e| crate::error::CoreError::Channel(format!("spawn_blocking: {}", e)))?
+    }
+
     pub async fn smart_search(
         &self,
         store: &Store,

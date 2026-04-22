@@ -93,6 +93,51 @@ impl From<&messagehub_core::store::ReplyDraft> for ReplyDraftDto {
     }
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiDraftDto {
+    pub draft_id: String,
+    pub body: String,
+    pub confidence: f32,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiDraftSummaryDto {
+    pub id: String,
+    pub created_at: String,
+    pub confidence: f32,
+    pub preview: String,
+    pub body: String,
+    pub has_user_edit: bool,
+}
+
+impl From<&messagehub_core::store::DraftRecord> for AiDraftSummaryDto {
+    fn from(d: &messagehub_core::store::DraftRecord) -> Self {
+        let body = d
+            .user_edited_output
+            .as_deref()
+            .unwrap_or(&d.output)
+            .to_string();
+        let preview: String = body.chars().take(80).collect();
+        Self {
+            id: d.id.to_string(),
+            created_at: d.created_at.clone(),
+            confidence: d.confidence,
+            preview,
+            body,
+            has_user_edit: d.user_edited_output.is_some(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudStatusDto {
+    pub configured: bool,
+    pub model: Option<String>,
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 /// Build a `MessageRow` DTO from a core `Message`.
@@ -565,6 +610,58 @@ pub async fn send_email_reply(
     Ok(())
 }
 
+#[tauri::command]
+pub async fn ai_draft_reply(
+    message_id: String,
+    redact: bool,
+    state: State<'_, AppState>,
+) -> Result<AiDraftDto, String> {
+    use messagehub_core::ai::cloud::CloudConfig;
+
+    let msg = Uuid::parse_str(&message_id).map_err(|e| format!("bad message_id: {}", e))?;
+    let cloud = state
+        .cloud
+        .clone()
+        .ok_or_else(|| "Cloud not configured — add [cloud] to messagehub.toml".to_string())?;
+
+    let store = state.store.clone();
+    let outcome = cloud
+        .draft_reply_via(store, msg, CloudConfig { redact })
+        .await
+        .map_err(|e| format!("draft_reply: {}", e))?;
+
+    Ok(AiDraftDto {
+        draft_id: outcome.id.to_string(),
+        body: outcome.output,
+        confidence: outcome.confidence,
+    })
+}
+
+#[tauri::command]
+pub fn list_ai_drafts(
+    message_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<AiDraftSummaryDto>, String> {
+    let msg = Uuid::parse_str(&message_id).map_err(|e| format!("bad message_id: {}", e))?;
+    let store = state.store.lock().map_err(|e| format!("store lock: {}", e))?;
+    let rows = store
+        .list_drafts_for_message(&msg)
+        .map_err(|e| format!("list_drafts_for_message: {}", e))?;
+    Ok(rows
+        .iter()
+        .filter(|r| r.action_type == "draft_reply")
+        .map(AiDraftSummaryDto::from)
+        .collect())
+}
+
+#[tauri::command]
+pub fn cloud_config_status(state: State<'_, AppState>) -> Result<CloudStatusDto, String> {
+    Ok(CloudStatusDto {
+        configured: state.cloud.is_some(),
+        model: state.cloud_model.clone(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -609,6 +706,49 @@ mod tests {
         .to_core()
         .unwrap_err();
         assert!(err.contains("unknown channel_type"));
+    }
+
+    #[test]
+    fn ai_draft_summary_dto_from_draft_record() {
+        use messagehub_core::store::DraftRecord;
+        let d = DraftRecord {
+            id: Uuid::new_v4(),
+            message_id: Some(Uuid::new_v4()),
+            action_type: "draft_reply".into(),
+            input_redacted: "body".into(),
+            output: "Thanks!".into(),
+            user_edited_output: None,
+            confidence: 0.73,
+            provider: "anthropic".into(),
+            model: "claude-sonnet-4-6".into(),
+            created_at: "2026-04-21T10:00:00Z".into(),
+        };
+        let dto = AiDraftSummaryDto::from(&d);
+        assert_eq!(dto.preview, "Thanks!");
+        assert_eq!(dto.body, "Thanks!");
+        assert!(!dto.has_user_edit);
+        assert!((dto.confidence - 0.73).abs() < 1e-6);
+    }
+
+    #[test]
+    fn ai_draft_summary_uses_user_edit_when_present() {
+        use messagehub_core::store::DraftRecord;
+        let d = DraftRecord {
+            id: Uuid::new_v4(),
+            message_id: Some(Uuid::new_v4()),
+            action_type: "draft_reply".into(),
+            input_redacted: "body".into(),
+            output: "original".into(),
+            user_edited_output: Some("edited".into()),
+            confidence: 0.5,
+            provider: "anthropic".into(),
+            model: "claude-sonnet-4-6".into(),
+            created_at: "2026-04-21T10:00:00Z".into(),
+        };
+        let dto = AiDraftSummaryDto::from(&d);
+        assert_eq!(dto.preview, "edited");
+        assert_eq!(dto.body, "edited");
+        assert!(dto.has_user_edit);
     }
 
     #[test]

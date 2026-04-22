@@ -23,6 +23,9 @@ fn main() {
                     commands::get_reply_draft,
                     commands::delete_reply_draft,
                     commands::send_email_reply,
+                    commands::ai_draft_reply,
+                    commands::list_ai_drafts,
+                    commands::cloud_config_status,
                 ])
                 .run(tauri::generate_context!())
                 .expect("error while running tauri application");
@@ -45,6 +48,9 @@ fn main() {
                     commands::get_reply_draft,
                     commands::delete_reply_draft,
                     commands::send_email_reply,
+                    commands::ai_draft_reply,
+                    commands::list_ai_drafts,
+                    commands::cloud_config_status,
                 ])
                 .run(tauri::generate_context!())
                 .expect("error while running tauri application");
