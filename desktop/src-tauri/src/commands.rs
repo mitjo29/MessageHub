@@ -433,6 +433,138 @@ pub fn delete_reply_draft(
         .map_err(|e| format!("delete_reply_draft: {}", e))
 }
 
+#[tauri::command]
+pub async fn send_email_reply(
+    thread_id: String,
+    in_reply_to_message_id: String,
+    body: String,
+    subject: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    use messagehub_core::adapters::email::{EmailAdapter, ImapSettings};
+    use messagehub_core::adapters::ChannelAdapter;
+    use messagehub_core::types::{Channel, MessageContent, ReplyHeaders};
+
+    let thread = Uuid::parse_str(&thread_id).map_err(|e| format!("bad thread_id: {}", e))?;
+    let irt = Uuid::parse_str(&in_reply_to_message_id)
+        .map_err(|e| format!("bad in_reply_to_message_id: {}", e))?;
+
+    // Gather everything we need under the store lock, then drop it before
+    // any .await — MutexGuard is !Send so holding it across await is a
+    // compile error anyway, and the codebase's runtime layer follows this
+    // pattern consistently.
+    let (channel_config, to_addr, in_reply_to_hdr, references_hdr) = {
+        let store = state.store.lock().map_err(|e| format!("store lock: {}", e))?;
+        let message = store
+            .get_message(&irt)
+            .map_err(|e| format!("get_message: {}", e))?;
+
+        if message.channel != Channel::Email {
+            return Err("send_email_reply only supports Email channels".into());
+        }
+
+        let channel_cfg = store
+            .list_channel_configs()
+            .map_err(|e| format!("list_channel_configs: {}", e))?
+            .into_iter()
+            .find(|c| c.channel == message.channel)
+            .ok_or_else(|| "No Email channel configured for this message".to_string())?;
+
+        let contact = store
+            .get_contact(&message.sender_id)
+            .map_err(|e| format!("get_contact: {}", e))?;
+        let to = contact
+            .identities
+            .iter()
+            .find(|id| id.channel == Channel::Email)
+            .map(|id| id.address.clone())
+            .ok_or_else(|| {
+                "No recipient address known for this contact on Email".to_string()
+            })?;
+
+        let original_msg_id = message
+            .metadata
+            .get("message_id")
+            .cloned()
+            .ok_or_else(|| {
+                "Cannot reply: original message has no Message-ID header".to_string()
+            })?;
+
+        let mut references: Vec<String> = message
+            .metadata
+            .get("references")
+            .map(|s| {
+                s.split_whitespace()
+                    .map(|r| r.trim_matches(|c| c == '<' || c == '>').to_string())
+                    .filter(|r| !r.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
+        references.push(original_msg_id.clone());
+
+        (channel_cfg, to, original_msg_id, references)
+    };
+
+    // AppState.email_connections is a sync HashMap; cloning the value is cheap.
+    let conn = state
+        .email_connections
+        .get(&channel_config.id)
+        .cloned()
+        .ok_or_else(|| {
+            "No credentials configured for this channel in messagehub.toml".to_string()
+        })?;
+
+    // Subject dedup guard — UI supposedly already applied "Re: " prefix, but
+    // belt-and-braces if a future UI path forgets.
+    let subject_final = if subject.trim_start().to_ascii_lowercase().starts_with("re:") {
+        subject
+    } else if subject.is_empty() {
+        "Re:".to_string()
+    } else {
+        format!("Re: {}", subject)
+    };
+
+    let content = MessageContent {
+        text: Some(body),
+        html: None,
+        subject: Some(subject_final),
+        attachments: Vec::new(),
+        reply_headers: Some(ReplyHeaders {
+            to: to_addr,
+            in_reply_to: in_reply_to_hdr,
+            references: references_hdr,
+        }),
+    };
+
+    // EmailAdapter::connect reads channel_config.keychain_ref as "user:password".
+    // The AppState.email_connections stored the credentials separately, so we
+    // synthesize a config-for-connect here with the right keychain_ref shape.
+    let mut config_for_connect = channel_config.clone();
+    config_for_connect.keychain_ref = format!("{}:{}", conn.username, conn.password);
+
+    let mut adapter = EmailAdapter::with_settings(ImapSettings {
+        host: conn.imap_host.clone(),
+        port: conn.imap_port,
+        smtp_host: conn.smtp_host.clone(),
+        smtp_port: conn.smtp_port,
+    });
+    adapter
+        .connect(&config_for_connect)
+        .await
+        .map_err(|e| format!("connect: {}", e))?;
+    let send_result = adapter.send_reply("", &content).await;
+    let _ = adapter.disconnect().await; // best-effort
+
+    send_result.map_err(|e| format!("smtp send: {}", e))?;
+
+    // Best-effort draft cleanup. Logged but not surfaced — the email already left.
+    let store = state.store.lock().map_err(|e| format!("store lock: {}", e))?;
+    if let Err(e) = store.delete_reply_draft(&thread) {
+        eprintln!("send_email_reply: delete_reply_draft failed: {}", e);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
