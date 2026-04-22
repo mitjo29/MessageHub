@@ -7,6 +7,7 @@ import {
 } from "../api";
 import { api } from "../api";
 import { useAutosave } from "../hooks/useAutosave";
+import { AiAssistPanel } from "./AiAssistPanel";
 
 interface Props {
   messageId: string;
@@ -173,8 +174,13 @@ export function ReplyModal({ messageId, threadId, onClose }: Props) {
           </div>
         </div>
         <div className="reply-modal-aside">
-          {/* Task 18 replaces this with AiAssistPanel. */}
-          <div className="reply-modal-ai-stub">AI assist (Task 18)</div>
+          <AiAssistPanel
+            messageId={messageId}
+            onDraftReady={(text, _conf) => {
+              setBody(text);
+              void saveReplyDraft(threadId, messageId, text, subject);
+            }}
+          />
         </div>
       </div>
     </div>
