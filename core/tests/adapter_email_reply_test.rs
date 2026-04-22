@@ -41,16 +41,19 @@ fn renders_in_reply_to_and_references() {
 
     let formatted = msg.formatted();
     let raw = std::str::from_utf8(&formatted).expect("utf-8");
+    let headers_section = raw.split("\r\n\r\n").next().unwrap();
+    let header_lines: Vec<&str> = headers_section.lines().collect();
 
-    assert!(raw.contains("From: alice@example.com"));
-    assert!(raw.contains("To: bob@example.com"));
-    assert!(raw.contains("Subject: Re: quote"));
-    assert!(raw.contains("In-Reply-To: <abc@orig>"));
-    assert!(raw.contains("References: <root@orig> <abc@orig>"));
-    // Lettre auto-generates a Message-ID; we only care it's present and
-    // scoped to the SMTP host.
-    assert!(raw.contains("Message-ID: <"));
-    assert!(raw.contains("@smtp.example.com>"));
+    assert!(header_lines.iter().any(|l| *l == "From: alice@example.com"));
+    assert!(header_lines.iter().any(|l| *l == "To: bob@example.com"));
+    assert!(header_lines.iter().any(|l| *l == "Subject: Re: quote"));
+    assert!(header_lines.iter().any(|l| *l == "In-Reply-To: <abc@orig>"));
+    assert!(header_lines.iter().any(|l| *l == "References: <root@orig> <abc@orig>"));
+
+    // Exactly one Message-ID, scoped to smtp host.
+    let message_id_lines: Vec<&&str> = header_lines.iter().filter(|l| l.starts_with("Message-ID:")).collect();
+    assert_eq!(message_id_lines.len(), 1, "expected exactly one Message-ID header");
+    assert!(message_id_lines[0].ends_with("@smtp.example.com>"));
 }
 
 #[test]
@@ -90,4 +93,51 @@ fn prepends_re_when_missing() {
     let formatted = msg.formatted();
     let raw = std::str::from_utf8(&formatted).expect("utf-8");
     assert!(raw.contains("Subject: Re: plain subject"));
+}
+
+#[test]
+fn rejects_header_injection_in_in_reply_to() {
+    // If a caller (mistakenly, or maliciously) stuffs a CRLF + extra header
+    // into the In-Reply-To value, wrap_angle must reject it (returns None)
+    // so the In-Reply-To header is simply omitted rather than emitted with
+    // an attacker-controlled follow-on header line.
+    let content = sample_content(
+        "Re: injection",
+        "body",
+        ReplyHeaders {
+            to: "b@x".into(),
+            in_reply_to: "abc@orig\r\nX-Evil: pwned".into(),
+            references: vec!["abc@orig".into()],
+        },
+    );
+    let msg = build_reply_message("a@x", &content, "smtp.x")
+        .expect("build ok");
+    let formatted = msg.formatted();
+    let raw = std::str::from_utf8(&formatted).expect("utf-8");
+
+    // No X-Evil header in the output.
+    assert!(!raw.contains("X-Evil"), "header injection leaked");
+    // No empty In-Reply-To either — the header should be omitted entirely
+    // because wrap_angle rejects the malformed input.
+    assert!(!raw.contains("In-Reply-To: \r\n"), "empty In-Reply-To emitted");
+}
+
+#[test]
+fn drops_empty_references_header() {
+    // If every entry of the references chain is malformed/empty, no
+    // References header should be emitted (rather than an empty one).
+    let content = sample_content(
+        "Re: no refs",
+        "body",
+        ReplyHeaders {
+            to: "b@x".into(),
+            in_reply_to: "m@x".into(),
+            references: vec!["".into(), "  ".into()], // all empty after trim
+        },
+    );
+    let msg = build_reply_message("a@x", &content, "smtp.x")
+        .expect("build ok");
+    let formatted = msg.formatted();
+    let raw = std::str::from_utf8(&formatted).expect("utf-8");
+    assert!(!raw.contains("References:"), "empty References header emitted");
 }

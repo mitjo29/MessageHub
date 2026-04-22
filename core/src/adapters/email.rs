@@ -40,14 +40,19 @@ impl Default for ImapSettings {
     }
 }
 
-/// Strips or adds angle-bracket wrapping around a message-id.
-fn wrap_angle(s: &str) -> String {
-    let trimmed = s.trim().trim_start_matches('<').trim_end_matches('>');
-    if trimmed.is_empty() {
-        String::new()
-    } else {
-        format!("<{}>", trimmed)
+/// Canonicalize a (bare or angle-wrapped) RFC 5322 msg-id to `<id>` form.
+/// Returns `None` if the input is empty after trimming or contains characters
+/// that cannot legally appear inside a msg-id (whitespace or angle brackets
+/// within the identifier). Callers are expected to omit the header entirely
+/// when `None` is returned, rather than emitting an empty header line.
+fn wrap_angle(s: &str) -> Option<String> {
+    let t = s.trim().trim_start_matches('<').trim_end_matches('>').trim();
+    if t.is_empty()
+        || t.bytes().any(|b| matches!(b, b'<' | b'>' | b' ' | b'\t' | b'\r' | b'\n'))
+    {
+        return None;
     }
+    Some(format!("<{}>", t))
 }
 
 /// Build a lettre [`Message`] for a threaded reply, honouring RFC 5322
@@ -86,21 +91,28 @@ pub fn build_reply_message(
             CoreError::InvalidInput(format!("invalid to address: {}", e))
         })?;
 
-    let in_reply_to = wrap_angle(&headers.in_reply_to);
-    let references = headers.references.iter()
-        .map(|r| wrap_angle(r))
+    let in_reply_to_opt = wrap_angle(&headers.in_reply_to);
+    let references_joined: String = headers.references.iter()
+        .filter_map(|r| wrap_angle(r))
         .collect::<Vec<_>>()
         .join(" ");
 
     let message_id = format!("<{}@{}>", Uuid::new_v4(), smtp_host);
 
-    let msg = lettre::Message::builder()
+    let mut builder = lettre::Message::builder()
         .from(from_addr)
         .to(to_addr)
         .subject(subject)
-        .message_id(Some(message_id))
-        .in_reply_to(in_reply_to)
-        .references(references)
+        .message_id(Some(message_id));
+
+    if let Some(irt) = in_reply_to_opt {
+        builder = builder.in_reply_to(irt);
+    }
+    if !references_joined.is_empty() {
+        builder = builder.references(references_joined);
+    }
+
+    let msg = builder
         .body(text.to_string())
         .map_err(|e| CoreError::Channel(format!("failed to build email: {}", e)))?;
 
