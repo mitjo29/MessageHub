@@ -83,7 +83,7 @@ export function ReplyModal({ messageId, threadId, onClose }: Props) {
     };
   }, [messageId, threadId]);
 
-  useAutosave(body, 5000, async (value) => {
+  const { markSaved } = useAutosave(body, 5000, async (value) => {
     if (!loaded) return;
     await saveReplyDraft(threadId, messageId, value, subject);
   });
@@ -93,6 +93,9 @@ export function ReplyModal({ messageId, threadId, onClose }: Props) {
     setSendError(null);
     try {
       await sendEmailReply(threadId, messageId, body, subject);
+      // Tell the hook the draft is fully resolved — prevents the unmount
+      // flush from re-inserting the row that sendEmailReply just deleted.
+      markSaved(body);
       onClose();
     } catch (err) {
       setSendError(typeof err === "string" ? err : String(err));
@@ -107,6 +110,9 @@ export function ReplyModal({ messageId, threadId, onClose }: Props) {
     } catch (err) {
       console.error("deleteReplyDraft failed:", err);
     }
+    // Same guard as Send — the row is gone; don't let the unmount flush
+    // re-create it.
+    markSaved(body);
     onClose();
   }
 
