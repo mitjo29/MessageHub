@@ -22,6 +22,12 @@ pub struct TauriCloudConfig {
     pub enabled: bool,
     pub api_key: Option<String>,
     pub model: Option<String>,
+    /// Optional base URL override. Defaults to `https://api.anthropic.com`
+    /// when absent. Point this at a LiteLLM/Anthropic-compatible proxy to
+    /// route drafts through an alternate backend (e.g. Ollama via proxy).
+    /// The wire format stays Anthropic's `/v1/messages` — the proxy is
+    /// responsible for translation if the underlying model speaks OpenAI.
+    pub url: Option<String>,
 }
 
 /// One entry in the `[[channels]]` array.

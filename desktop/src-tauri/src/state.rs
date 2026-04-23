@@ -80,8 +80,18 @@ impl AppState {
                 (Some(api_key), Some(model)) => {
                     let redactor = Redactor::build(&store)
                         .map_err(|e| format!("Redactor::build: {}", e))?;
-                    let provider: Arc<dyn CloudProvider> =
-                        Arc::new(AnthropicCloud::new(api_key.clone(), model.clone()));
+                    let anthropic = AnthropicCloud::new(api_key.clone(), model.clone());
+                    // Optional URL override — route drafts through a
+                    // LiteLLM or Anthropic-compatible proxy instead of
+                    // the default Anthropic endpoint.
+                    let anthropic = match c.url.as_deref() {
+                        Some(u) if !u.is_empty() => {
+                            eprintln!("messagehub-desktop: cloud base URL overridden to {}", u);
+                            anthropic.with_base_url(u.to_string())
+                        }
+                        _ => anthropic,
+                    };
+                    let provider: Arc<dyn CloudProvider> = Arc::new(anthropic);
                     // TODO(7b.3 follow-up): load real UserProfile from vault. Empty profile
                     // here means drafts lack personalization signal — see Plan 7b.4+ for
                     // where this should be wired in.
