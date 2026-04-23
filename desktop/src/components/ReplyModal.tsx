@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   deleteReplyDraft,
   getReplyDraft,
@@ -44,6 +44,11 @@ export function ReplyModal({ messageId, threadId, onClose }: Props) {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  // Preserve the quoted-original block across AI Generate/Regenerate/Restore.
+  // The AI returns only the user-facing reply text (ai_drafts.output never
+  // includes the quote), so we keep the block in a ref set at mount time and
+  // re-append it whenever onDraftReady fires.
+  const quotedOriginalRef = useRef<string>("");
 
   // Mount: hydrate from existing draft if any, else seed with quoted original.
   useEffect(() => {
@@ -56,10 +61,16 @@ export function ReplyModal({ messageId, threadId, onClose }: Props) {
         ]);
         if (cancelled) return;
         setSubject(ensureRePrefix(msg.subject));
+        const quoted = quotedOriginal(
+          msg.sender_name,
+          msg.timestamp,
+          msg.body,
+        );
+        quotedOriginalRef.current = quoted;
         if (draft && draft.body.length > 0) {
           setBody(draft.body);
         } else {
-          setBody(quotedOriginal(msg.sender_name, msg.timestamp, msg.body));
+          setBody(quoted);
         }
         setLoaded(true);
       } catch (err) {
@@ -177,8 +188,11 @@ export function ReplyModal({ messageId, threadId, onClose }: Props) {
           <AiAssistPanel
             messageId={messageId}
             onDraftReady={(text, _conf) => {
-              setBody(text);
-              void saveReplyDraft(threadId, messageId, text, subject);
+              // Preserve the quoted original below the AI/Restored text
+              // so context isn't lost on Generate/Regenerate/Restore.
+              const combined = text + quotedOriginalRef.current;
+              setBody(combined);
+              void saveReplyDraft(threadId, messageId, combined, subject);
             }}
           />
         </div>
