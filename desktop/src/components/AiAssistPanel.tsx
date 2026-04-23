@@ -92,7 +92,7 @@ export function AiAssistPanel({ messageId, onDraftReady }: Props) {
           checked={redact}
           onChange={(e) => setRedact(e.target.checked)}
         />{" "}
-        Redact PII
+        Anonymise content
       </label>
       <button
         className="ai-panel-prior-toggle"
