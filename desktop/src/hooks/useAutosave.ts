@@ -14,11 +14,18 @@ export function useAutosave<T>(
   const lastSavedRef = useRef<T>(value);
   const timerRef = useRef<number | null>(null);
   const onSaveRef = useRef(onSave);
+  const valueRef = useRef<T>(value);
 
   // Keep onSave fresh without re-arming the timer on every re-render.
   useEffect(() => {
     onSaveRef.current = onSave;
   }, [onSave]);
+
+  // Keep valueRef fresh so the unmount-flush effect reads the latest value,
+  // not the mount-time value captured by its closure.
+  useEffect(() => {
+    valueRef.current = value;
+  });
 
   useEffect(() => {
     if (Object.is(value, lastSavedRef.current)) {
@@ -44,11 +51,13 @@ export function useAutosave<T>(
     };
   }, [value, delayMs]);
 
-  // Final flush on unmount if dirty.
+  // Final flush on unmount if dirty. Reads valueRef so it sees the current
+  // value, not the mount-time snapshot.
   useEffect(() => {
     return () => {
-      if (!Object.is(value, lastSavedRef.current)) {
-        onSaveRef.current(value).catch((err) => {
+      const current = valueRef.current;
+      if (!Object.is(current, lastSavedRef.current)) {
+        onSaveRef.current(current).catch((err) => {
           console.error("useAutosave: final flush failed", err);
         });
       }

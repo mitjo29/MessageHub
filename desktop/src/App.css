@@ -263,7 +263,7 @@ body {
   border-bottom: 1px solid var(--border, #333);
   padding: 6px 4px;
   font-size: 14px;
-  color: var(--text, #ddd);
+  color: #e4e4e4;       /* hardcoded — was var(--text, #ddd) */
 }
 
 .reply-modal-error {
@@ -292,7 +292,7 @@ body {
   border: 1px solid var(--border, #333);
   border-radius: 4px;
   padding: 10px;
-  color: var(--text, #ddd);
+  color: #e4e4e4;       /* hardcoded — was var(--text, #ddd) */
   font-family: inherit;
   font-size: 13px;
   resize: none;
