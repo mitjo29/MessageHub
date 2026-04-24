@@ -22,21 +22,6 @@ update the TS types, and sweep the two consuming components
 (`MessageList.tsx`, `MessageDetail.tsx`) to use camelCase. Document the
 chosen convention in `CLAUDE.md`.
 
-### B-007 — `stable_channel_id` duplicated between runtime-demo and desktop
-
-**Severity:** Low  **Discovered:** Plan 7b.3 spec review (2026-04-21)
-
-`core/src/bin/runtime-demo.rs::stable_channel_id` and
-`desktop/src-tauri/src/state.rs::stable_channel_id` are byte-identical.
-They must stay in lockstep — a one-character drift breaks the
-Reply↔runtime channel-id contract (replies would look up the wrong
-channel credentials).
-
-Proposed fix: move the helper to `messagehub_core::channel_id` (or
-`messagehub_core::config`) as a public function, import it from both
-call sites. Acknowledged deliberately during 7b.3 planning — flagging
-here so it's tracked.
-
 ### B-009 — `send_email_reply` post-send store re-lock propagates mutex-poisoning errors
 
 **Severity:** Low  **Discovered:** Plan 7b.3 spec review (2026-04-22)
@@ -55,6 +40,17 @@ already does.
 ---
 
 ## Resolved
+
+### B-007 — `stable_channel_id` duplicated — **Fixed (2026-04-24)**
+
+Extracted the helper to new module `messagehub_core::channel_id`.
+`runtime-demo.rs` imports it directly; `desktop/src-tauri/src/state.rs`
+re-exports through a one-line wrapper to avoid churning every call
+site inside the desktop crate. Four unit tests in the new module,
+including a `format_pinned` test that locks in the UUIDv5 output
+string — any future byte-level drift in the seed format will fail
+this test loudly instead of silently orphaning persisted channel
+rows.
 
 ### B-005 — Tauri config resolver missing `../messagehub.toml` — **Fixed (2026-04-24)**
 

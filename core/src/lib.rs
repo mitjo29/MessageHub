@@ -5,3 +5,4 @@ pub mod adapters;
 pub mod knowledge;
 pub mod ai;
 pub mod runtime;
+pub mod channel_id;

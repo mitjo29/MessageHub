@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use messagehub_core::ai::cloud::{AnthropicCloud, CloudActions, CloudProvider, Redactor};
 use messagehub_core::ai::profile::UserProfile;
+use messagehub_core::channel_id::stable_channel_id as core_stable_channel_id;
 use messagehub_core::knowledge::Retriever;
 use messagehub_core::store::Store;
 use messagehub_core::types::Channel;
@@ -42,13 +43,12 @@ pub struct EmailConnection {
     pub password: String,
 }
 
-/// Matches runtime-demo's UUIDv5(OID, "{kind}:{label}") mapping so Reply
-/// lines up with the runtime's `channels` rows.
+/// Re-export from core so call sites in this crate can keep writing
+/// `crate::state::stable_channel_id(...)` without churn. The actual
+/// implementation lives in `messagehub_core::channel_id` — single
+/// source of truth shared with `runtime-demo`.
 pub fn stable_channel_id(kind: &str, label: &str) -> Uuid {
-    Uuid::new_v5(
-        &Uuid::NAMESPACE_OID,
-        format!("{}:{}", kind, label).as_bytes(),
-    )
+    core_stable_channel_id(kind, label)
 }
 
 impl AppState {

@@ -16,6 +16,7 @@ use messagehub_core::adapters::{
     telegram::TelegramAdapter,
     ChannelAdapter,
 };
+use messagehub_core::channel_id::stable_channel_id;
 use messagehub_core::error::Result as CoreResult;
 use messagehub_core::runtime::factory::AdapterFactory;
 use messagehub_core::runtime::status::ChannelStatus;
@@ -122,11 +123,6 @@ fn parse_config_path(args: &[String]) -> PathBuf {
     default_config_path()
 }
 
-fn stable_channel_id(kind: &str, label: &str) -> Uuid {
-    // UUID v5 with NAMESPACE_OID gives a deterministic id from (kind, label).
-    // Re-runs of runtime-demo always map the same TOML entry to the same DB row.
-    Uuid::new_v5(&Uuid::NAMESPACE_OID, format!("{}:{}", kind, label).as_bytes())
-}
 
 fn channel_kind_from_toml(kind: &str) -> Result<Channel, Box<dyn std::error::Error>> {
     match kind {
