@@ -4,19 +4,6 @@ Issues and improvements queued for future plans. Each entry has a severity,
 discovered-during context, and a proposed fix. When work begins, promote the
 item to a proper plan under `docs/superpowers/plans/`.
 
-### B-005 — Tauri config resolver can't find `desktop/messagehub.toml`
-
-**Severity:** Low  **Discovered:** Plan 7b.3 UAT (2026-04-22)
-
-`desktop/src-tauri/src/config.rs::resolve_config_path` checks `./`,
-`../core/`, `../../core/`, `core/`. From Tauri dev's CWD (`desktop/src-tauri/`)
-none of those match `desktop/messagehub.toml`. Users who put their config
-at the "obvious" location (next to the desktop crate) get silently
-ignored — the resolver finds `core/messagehub.toml` via the
-`../../core/` candidate and uses that instead.
-
-Proposed fix: add `../messagehub.toml` as a candidate. One line.
-
 ### B-006 — DTO camelCase / snake_case drift between 7b.2 and 7b.3
 
 **Severity:** Low  **Discovered:** Plan 7b.3 implementation (2026-04-22)
@@ -68,6 +55,13 @@ already does.
 ---
 
 ## Resolved
+
+### B-005 — Tauri config resolver missing `../messagehub.toml` — **Fixed (2026-04-24)**
+
+Added `../messagehub.toml` as the second candidate in
+`resolve_config_path`. From Tauri dev CWD (`desktop/src-tauri/`) it now
+finds a TOML placed next to `desktop/`, which is the "obvious"
+location users try first.
 
 ### B-008 — `UserProfile` always empty — **Fixed (2026-04-24)**
 

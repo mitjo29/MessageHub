@@ -64,6 +64,7 @@ pub struct EmailCredentials {
 pub fn resolve_config_path() -> Option<PathBuf> {
     let candidates = [
         PathBuf::from("messagehub.toml"),          // CWD = desktop/ or workspace root
+        PathBuf::from("../messagehub.toml"),       // CWD = desktop/src-tauri/ with TOML next to desktop/
         PathBuf::from("../core/messagehub.toml"),  // CWD = desktop/
         PathBuf::from("../../core/messagehub.toml"), // CWD = desktop/src-tauri/ (tauri dev)
         PathBuf::from("core/messagehub.toml"),     // CWD = workspace root
