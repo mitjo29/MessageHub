@@ -19,14 +19,43 @@ describe("htmlToMarkdown", () => {
     expect(md).toMatch(/-\s+two/);
   });
 
-  test("table becomes GFM pipe table", () => {
+  test("tables are flattened to their contents (layout tables are the common case)", () => {
+    // Email tables are almost always layout scaffolding, so we unwrap
+    // them rather than preserve the grid. Cell text survives.
     const md = htmlToMarkdown(
       `<table><thead><tr><th>a</th><th>b</th></tr></thead>` +
         `<tbody><tr><td>1</td><td>2</td></tr></tbody></table>`,
     );
-    expect(md).toContain("|");
-    expect(md).toMatch(/\|\s*a\s*\|\s*b\s*\|/);
-    expect(md).toMatch(/\|\s*1\s*\|\s*2\s*\|/);
+    expect(md).toContain("a");
+    expect(md).toContain("b");
+    expect(md).toContain("1");
+    expect(md).toContain("2");
+    // No leaked pipe-table or raw-HTML structure.
+    expect(md).not.toContain("|");
+    expect(md).not.toContain("<table");
+  });
+
+  test("deeply nested MJML-style layout tables do not leak raw HTML", () => {
+    // Representative of marketing email (e.g. role="presentation" tables
+    // inside tables inside divs). The previous failure mode: turndown's
+    // default passed the outer <table> through as literal HTML, which
+    // react-markdown rendered as visible escaped text.
+    const html = [
+      `<table role="presentation"><tbody><tr><td>`,
+      `<div class="mj-column-per-100">`,
+      `<table role="presentation"><tbody><tr><td>`,
+      `<p>Welcome to our newsletter.</p>`,
+      `<p>Read more at <a href="https://example.com">example.com</a>.</p>`,
+      `</td></tr></tbody></table>`,
+      `</div>`,
+      `</td></tr></tbody></table>`,
+    ].join("");
+    const md = htmlToMarkdown(html);
+    expect(md).toContain("Welcome to our newsletter");
+    expect(md).toContain("[example.com](https://example.com)");
+    // Critical: no surviving raw table tags to trip react-markdown's
+    // HTML-escape path.
+    expect(md).not.toMatch(/<\s*(table|tbody|tr|td|thead|tfoot)/i);
   });
 
   test("gmail wrapper div is flattened (contents survive)", () => {

@@ -45,6 +45,27 @@ function buildService(): TurndownService {
     replacement: (content) => content,
   });
 
+  // Tables in email are almost always layout scaffolding (MJML, Mailchimp,
+  // old Outlook templates). Turndown's GFM plugin only converts "simple"
+  // tables and passes complex/nested layout tables through as raw HTML —
+  // which react-markdown then renders as visible escaped text. Flatten
+  // them to their contents so whatever real text they hold surfaces as
+  // normal paragraphs. Data tables (with meaningful headers) are rare in
+  // messaging; if we ever need them, add a stricter rule that only
+  // unwraps tables carrying role="presentation" or no <th>.
+  td.addRule("unwrap-table-layout", {
+    filter: ["table", "thead", "tbody", "tfoot"],
+    replacement: (content) => `\n\n${content}\n\n`,
+  });
+  td.addRule("unwrap-tr", {
+    filter: "tr",
+    replacement: (content) => `${content}\n`,
+  });
+  td.addRule("unwrap-td-th", {
+    filter: ["td", "th"],
+    replacement: (content) => `${content} `,
+  });
+
   return td;
 }
 
