@@ -2787,6 +2787,7 @@ dependencies = [
 name = "messagehub-desktop"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "messagehub-core",
  "serde",
  "serde_json",

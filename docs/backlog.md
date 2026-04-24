@@ -4,25 +4,6 @@ Issues and improvements queued for future plans. Each entry has a severity,
 discovered-during context, and a proposed fix. When work begins, promote the
 item to a proper plan under `docs/superpowers/plans/`.
 
-### B-004 — `send_email_reply` picks first matching channel when multiple Email accounts are configured
-
-**Severity:** High  **Discovered:** Plan 7b.3 final review (2026-04-23)
-
-`desktop/src-tauri/src/commands.rs::send_email_reply` finds the channel to
-reply from via `list_channel_configs().into_iter().find(|c| c.channel ==
-Channel::Email)` — the first match wins. If a user has both
-`work@example.com` and `personal@example.com` configured, replies go out
-from whichever channel sorts first, not the account that received the
-message. The `EmailConnection` lookup in `AppState.email_connections`
-compounds this because it's keyed by that same first-match channel id.
-
-Proposed fix: persist the receiving-channel id on the `messages` row at
-ingest time (e.g., a `received_on_channel_id` column), then use it in
-`send_email_reply`. Alternative: match the message's `To:` header
-against each configured account's `username` to pick the right one.
-Pre-existing TODO at `commands.rs:148` flags the same gap for label
-display — both would be fixed by the same schema change.
-
 ### B-005 — Tauri config resolver can't find `desktop/messagehub.toml`
 
 **Severity:** Low  **Discovered:** Plan 7b.3 UAT (2026-04-22)
@@ -102,6 +83,18 @@ already does.
 ---
 
 ## Resolved
+
+### B-004 — `send_email_reply` first-match channel routing — **Fixed in branch 1 (2026-04-24)**
+
+Schema-based fix: migration 008 adds `messages.received_on_channel_id`
+(FK → `channels.id`); the ingestor sets it from `IngestJob.channel_id`
+at write time; `send_email_reply` now resolves through a new
+`resolve_reply_channel` helper that prefers the recorded receiving
+channel and falls back to single-variant match for legacy NULL rows
+(ambiguous legacy errors rather than guessing). Five unit tests in
+`commands::tests::resolver_*` pin the precedence rules. Pre-existing
+TODO at `commands.rs:148` for label display is now unblocked but not
+yet executed — separate follow-up.
 
 ### B-003 — Ingest has no idempotency — **Fixed in Plan 7b.2.1 (2026-04-21)**
 

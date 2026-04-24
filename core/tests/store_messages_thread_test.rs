@@ -57,6 +57,7 @@ fn msg(sender: Uuid, thread: Uuid, text: &str, epoch_secs: i64) -> Message {
         is_read: false,
         is_archived: false,
         external_id: None,
+        received_on_channel_id: None,
     }
 }
 

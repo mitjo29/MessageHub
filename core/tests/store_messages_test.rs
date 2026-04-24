@@ -60,6 +60,7 @@ fn make_message(sender_id: Uuid, thread_id: Uuid) -> Message {
         is_read: false,
         is_archived: false,
         external_id: None,
+        received_on_channel_id: None,
     }
 }
 

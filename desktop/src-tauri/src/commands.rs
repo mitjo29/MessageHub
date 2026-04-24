@@ -1,10 +1,64 @@
 use messagehub_core::store::MessageFilter;
-use messagehub_core::types::Channel;
+use messagehub_core::types::{Channel, ChannelConfig, Message};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use uuid::Uuid;
 
 use crate::state::AppState;
+
+/// Pick the configured channel a reply to `message` should go out on.
+///
+/// Precedence:
+/// 1. If `message.received_on_channel_id` is set (post-migration-008 rows),
+///    use the channel with that exact id. If no config matches that id —
+///    likely the channel was deleted from `messagehub.toml` since the
+///    message was ingested — return an error rather than silently
+///    falling back, because a fallback to the wrong account is the bug
+///    we're trying to prevent (B-004).
+/// 2. If `received_on_channel_id` is `None` (legacy rows from before
+///    migration 008): we can't prove which account received it. If
+///    exactly one config matches `message.channel`, use it (the
+///    overwhelmingly common single-account case is unaffected). If
+///    multiple match, error — the user must reply from the new UI on a
+///    fresh message.
+///
+/// Returns the chosen `ChannelConfig` or an error string suitable for
+/// surfacing to the UI.
+fn resolve_reply_channel(
+    message: &Message,
+    configs: Vec<ChannelConfig>,
+) -> Result<ChannelConfig, String> {
+    if let Some(rcv_id) = message.received_on_channel_id {
+        return configs
+            .into_iter()
+            .find(|c| c.id == rcv_id)
+            .ok_or_else(|| {
+                format!(
+                    "Cannot reply: the {} channel this message arrived on (id {}) \
+                     is no longer configured",
+                    message.channel, rcv_id
+                )
+            });
+    }
+
+    // Legacy row (pre-migration-008): no recorded receiving channel. Safe
+    // only when there's exactly one candidate — anything else risks
+    // re-introducing B-004.
+    let mut matches: Vec<ChannelConfig> = configs
+        .into_iter()
+        .filter(|c| c.channel == message.channel)
+        .collect();
+    match matches.len() {
+        0 => Err(format!("No {} channel configured to reply on", message.channel)),
+        1 => Ok(matches.remove(0)),
+        n => Err(format!(
+            "Cannot disambiguate which of {} configured {} accounts to reply from \
+             (legacy message has no receiving-channel record — open the message \
+             again after re-syncing to populate it)",
+            n, message.channel
+        )),
+    }
+}
 
 // ── DTOs ──────────────────────────────────────────────────────────────────────
 
@@ -508,12 +562,10 @@ pub async fn send_email_reply(
             return Err("send_email_reply only supports Email channels".into());
         }
 
-        let channel_cfg = store
+        let configs = store
             .list_channel_configs()
-            .map_err(|e| format!("list_channel_configs: {}", e))?
-            .into_iter()
-            .find(|c| c.channel == message.channel)
-            .ok_or_else(|| "No Email channel configured for this message".to_string())?;
+            .map_err(|e| format!("list_channel_configs: {}", e))?;
+        let channel_cfg = resolve_reply_channel(&message, configs)?;
 
         let contact = store
             .get_contact(&message.sender_id)
@@ -665,6 +717,110 @@ pub fn cloud_config_status(state: State<'_, AppState>) -> Result<CloudStatusDto,
 #[cfg(test)]
 mod tests {
     use super::*;
+    use messagehub_core::runtime::status::ChannelStatus;
+    use messagehub_core::types::{Channel, ChannelConfig, Message, MessageContent};
+    use std::collections::HashMap;
+
+    fn cfg(id: Uuid, channel: Channel, label: &str) -> ChannelConfig {
+        ChannelConfig {
+            id,
+            channel,
+            label: label.to_string(),
+            keychain_ref: "user:pass".to_string(),
+            enabled: true,
+            poll_interval_secs: 60,
+            last_sync_cursor: None,
+            last_sync_at: None,
+            status: ChannelStatus::Healthy,
+            last_error: None,
+            consecutive_failures: 0,
+        }
+    }
+
+    fn msg(channel: Channel, received_on: Option<Uuid>) -> Message {
+        Message {
+            id: Uuid::new_v4(),
+            channel,
+            thread_id: Uuid::new_v4(),
+            sender_id: Uuid::new_v4(),
+            content: MessageContent {
+                text: Some("hi".into()),
+                html: None,
+                subject: None,
+                attachments: vec![],
+                reply_headers: None,
+            },
+            timestamp: chrono::Utc::now(),
+            metadata: HashMap::new(),
+            priority: None,
+            category: None,
+            is_read: false,
+            is_archived: false,
+            external_id: None,
+            received_on_channel_id: received_on,
+        }
+    }
+
+    // ── resolve_reply_channel ──────────────────────────────────────────
+
+    #[test]
+    fn resolver_picks_received_on_channel_when_set() {
+        let work = Uuid::new_v4();
+        let personal = Uuid::new_v4();
+        let configs = vec![
+            cfg(work, Channel::Email, "work"),
+            cfg(personal, Channel::Email, "personal"),
+        ];
+        // Message arrived on the personal account.
+        let m = msg(Channel::Email, Some(personal));
+        let chosen = resolve_reply_channel(&m, configs).unwrap();
+        assert_eq!(chosen.id, personal, "must reply from the receiving account");
+        assert_eq!(chosen.label, "personal");
+    }
+
+    #[test]
+    fn resolver_errors_when_received_on_channel_no_longer_exists() {
+        let stale = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        let configs = vec![cfg(other, Channel::Email, "other")];
+        let m = msg(Channel::Email, Some(stale));
+        // Don't silently fall back — that would re-introduce B-004.
+        assert!(resolve_reply_channel(&m, configs).is_err());
+    }
+
+    #[test]
+    fn resolver_falls_back_to_single_matching_variant_when_legacy_null() {
+        let only = Uuid::new_v4();
+        let configs = vec![cfg(only, Channel::Email, "solo")];
+        let m = msg(Channel::Email, None); // legacy row, pre-migration-008
+        let chosen = resolve_reply_channel(&m, configs).unwrap();
+        assert_eq!(chosen.id, only);
+    }
+
+    #[test]
+    fn resolver_errors_when_legacy_null_and_multiple_variant_matches() {
+        let work = Uuid::new_v4();
+        let personal = Uuid::new_v4();
+        let configs = vec![
+            cfg(work, Channel::Email, "work"),
+            cfg(personal, Channel::Email, "personal"),
+        ];
+        let m = msg(Channel::Email, None);
+        assert!(
+            resolve_reply_channel(&m, configs).is_err(),
+            "ambiguous legacy row must error rather than guess"
+        );
+    }
+
+    #[test]
+    fn resolver_errors_when_no_matching_variant_at_all() {
+        let tg = Uuid::new_v4();
+        let configs = vec![cfg(tg, Channel::Telegram, "tg")];
+        let m = msg(Channel::Email, None);
+        assert!(resolve_reply_channel(&m, configs).is_err());
+    }
+
+    // ── existing tests ────────────────────────────────────────────────
 
     #[test]
     fn filter_all_maps_to_default() {

@@ -58,6 +58,7 @@ fn seed_messages(store: &Store) {
             is_read: false,
             is_archived: false,
             external_id: None,
+            received_on_channel_id: None,
         };
         store.insert_message(&msg).unwrap();
     }

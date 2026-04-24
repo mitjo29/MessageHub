@@ -20,8 +20,8 @@ impl Store {
         let metadata_json = serde_json::to_string(&msg.metadata)?;
 
         self.conn().execute(
-            "INSERT INTO messages (id, channel_type, thread_id, sender_id, content_text, content_html, content_subject, attachments_json, timestamp, metadata_json, priority_score, category, is_read, is_archived, external_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+            "INSERT INTO messages (id, channel_type, thread_id, sender_id, content_text, content_html, content_subject, attachments_json, timestamp, metadata_json, priority_score, category, is_read, is_archived, external_id, received_on_channel_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
              ON CONFLICT(channel_type, external_id) WHERE external_id IS NOT NULL DO NOTHING",
             params![
                 msg.id.to_string(),
@@ -39,6 +39,7 @@ impl Store {
                 msg.is_read as i32,
                 msg.is_archived as i32,
                 msg.external_id,
+                msg.received_on_channel_id.map(|u| u.to_string()),
             ],
         )?;
         Ok(())
@@ -47,7 +48,7 @@ impl Store {
     pub fn get_message(&self, id: &Uuid) -> Result<Message> {
         let id_str = id.to_string();
         let result = self.conn().query_row(
-            "SELECT id, channel_type, thread_id, sender_id, content_text, content_html, content_subject, attachments_json, timestamp, metadata_json, priority_score, category, is_read, is_archived, external_id FROM messages WHERE id = ?1",
+            "SELECT id, channel_type, thread_id, sender_id, content_text, content_html, content_subject, attachments_json, timestamp, metadata_json, priority_score, category, is_read, is_archived, external_id, received_on_channel_id FROM messages WHERE id = ?1",
             [&id_str],
             |row| {
                 Ok(row_to_message(row))
@@ -74,7 +75,7 @@ impl Store {
         let mut sql = String::from(
             "SELECT id, channel_type, thread_id, sender_id, content_text, content_html, \
              content_subject, attachments_json, timestamp, metadata_json, priority_score, \
-             category, is_read, is_archived, external_id FROM messages"
+             category, is_read, is_archived, external_id, received_on_channel_id FROM messages"
         );
         sql.push_str(&where_sql);
 
@@ -120,7 +121,8 @@ impl Store {
         let mut stmt = self.conn().prepare(
             "SELECT id, channel_type, thread_id, sender_id, content_text, content_html,
                     content_subject, attachments_json, timestamp, metadata_json,
-                    priority_score, category, is_read, is_archived, external_id
+                    priority_score, category, is_read, is_archived, external_id,
+                    received_on_channel_id
              FROM messages
              WHERE thread_id = ?1
              ORDER BY timestamp ASC
@@ -169,7 +171,7 @@ impl Store {
         let escaped = query.replace('"', "\"\"");
         let fts_query = format!("\"{}\"", escaped);
         let mut stmt = self.conn().prepare(
-            "SELECT m.id, m.channel_type, m.thread_id, m.sender_id, m.content_text, m.content_html, m.content_subject, m.attachments_json, m.timestamp, m.metadata_json, m.priority_score, m.category, m.is_read, m.is_archived, m.external_id
+            "SELECT m.id, m.channel_type, m.thread_id, m.sender_id, m.content_text, m.content_html, m.content_subject, m.attachments_json, m.timestamp, m.metadata_json, m.priority_score, m.category, m.is_read, m.is_archived, m.external_id, m.received_on_channel_id
              FROM messages_fts fts
              JOIN messages m ON m.rowid = fts.rowid
              WHERE messages_fts MATCH ?1
@@ -227,6 +229,7 @@ mod tests {
             is_read: false,
             is_archived: false,
             external_id: None,
+            received_on_channel_id: None,
         };
         store.insert_message(&msg).unwrap();
 
@@ -236,6 +239,86 @@ mod tests {
         let reloaded = store.get_message(&msg.id).unwrap();
         assert_eq!(reloaded.category.as_deref(), Some("work"));
         assert_eq!(reloaded.priority, Some(PriorityScore::new(4).unwrap()));
+    }
+
+    #[test]
+    fn received_on_channel_id_round_trips() {
+        use crate::runtime::status::ChannelStatus;
+        use crate::types::{Channel, ChannelConfig, Message, MessageContent, Thread};
+        use std::collections::HashMap;
+
+        let store = crate::store::Store::open_in_memory().unwrap();
+
+        // FK requires the referenced channel row to exist.
+        let received_on = uuid::Uuid::new_v4();
+        store
+            .insert_channel_config(&ChannelConfig {
+                id: received_on,
+                channel: Channel::Email,
+                label: "personal".into(),
+                keychain_ref: "u:p".into(),
+                enabled: true,
+                poll_interval_secs: 60,
+                last_sync_cursor: None,
+                last_sync_at: None,
+                status: ChannelStatus::Healthy,
+                last_error: None,
+                consecutive_failures: 0,
+            })
+            .unwrap();
+
+        let contact = store
+            .find_or_create_contact_by_address(Channel::Email, "alice@example.com", "Alice")
+            .unwrap();
+        let thread_id = uuid::Uuid::new_v4();
+        store
+            .insert_thread(&Thread {
+                id: thread_id,
+                channel: Channel::Email,
+                subject: None,
+                participant_ids: vec![],
+                message_count: 0,
+                last_message_at: chrono::Utc::now(),
+                created_at: chrono::Utc::now(),
+                external_thread_id: None,
+            })
+            .unwrap();
+
+        let m = Message {
+            id: uuid::Uuid::new_v4(),
+            channel: Channel::Email,
+            thread_id,
+            sender_id: contact.id,
+            content: MessageContent {
+                text: Some("hi".into()),
+                html: None,
+                subject: None,
+                attachments: vec![],
+                reply_headers: None,
+            },
+            timestamp: chrono::Utc::now(),
+            metadata: HashMap::new(),
+            priority: None,
+            category: None,
+            is_read: false,
+            is_archived: false,
+            external_id: None,
+            received_on_channel_id: Some(received_on),
+        };
+        store.insert_message(&m).unwrap();
+
+        let reloaded = store.get_message(&m.id).unwrap();
+        assert_eq!(reloaded.received_on_channel_id, Some(received_on));
+
+        // Legacy / unset path also round-trips.
+        let m2 = Message {
+            id: uuid::Uuid::new_v4(),
+            received_on_channel_id: None,
+            ..m
+        };
+        store.insert_message(&m2).unwrap();
+        let reloaded2 = store.get_message(&m2.id).unwrap();
+        assert_eq!(reloaded2.received_on_channel_id, None);
     }
 }
 
@@ -286,6 +369,10 @@ fn row_to_message(row: &rusqlite::Row) -> std::result::Result<Message, CoreError
     let is_read: i32 = row.get(12).map_err(CoreError::Database)?;
     let is_archived: i32 = row.get(13).map_err(CoreError::Database)?;
     let external_id: Option<String> = row.get(14).map_err(CoreError::Database)?;
+    let received_on_channel_id_str: Option<String> = row.get(15).map_err(CoreError::Database)?;
+    let received_on_channel_id = received_on_channel_id_str
+        .map(|s| Uuid::parse_str(&s).map_err(|e| CoreError::InvalidInput(e.to_string())))
+        .transpose()?;
 
     let channel = Channel::from_db_str(&channel_str).ok_or_else(|| {
         CoreError::InvalidInput(format!("unknown channel: {}", channel_str))
@@ -322,5 +409,6 @@ fn row_to_message(row: &rusqlite::Row) -> std::result::Result<Message, CoreError
         is_read: is_read != 0,
         is_archived: is_archived != 0,
         external_id,
+        received_on_channel_id,
     })
 }

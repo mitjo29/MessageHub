@@ -19,6 +19,12 @@ pub struct Message {
     pub is_archived: bool,
     #[serde(default)]
     pub external_id: Option<String>,
+    /// `channels.id` of the configured channel that ingested this message.
+    /// `None` for legacy rows from before migration 008 — `send_email_reply`
+    /// falls back to first-match for those. Always set on messages ingested
+    /// by the runtime since 7b.x.
+    #[serde(default)]
+    pub received_on_channel_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

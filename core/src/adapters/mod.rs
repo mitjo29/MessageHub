@@ -118,6 +118,9 @@ pub fn normalize(raw: RawMessage, sender_id: Uuid, thread_id: Uuid) -> Message {
         is_read: false,
         is_archived: false,
         external_id: Some(raw.external_id),
+        // Set by the ingestor after normalize() — the adapter doesn't know
+        // which configured channel row it's running under.
+        received_on_channel_id: None,
     }
 }
 

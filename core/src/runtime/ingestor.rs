@@ -66,7 +66,7 @@ async fn process_job(
 ) {
     let IngestJob { channel_id, batch } = job;
     for raw in batch {
-        match ingest_one(store, &raw) {
+        match ingest_one(store, &raw, channel_id) {
             Ok(message_id) => {
                 bus.publish(RuntimeEvent::MessageIngested {
                     id: message_id,
@@ -91,7 +91,7 @@ async fn process_job(
 }
 
 /// Resolve contact + thread, normalize, insert. Returns the new message id.
-fn ingest_one(store: &Mutex<Store>, raw: &RawMessage) -> Result<Uuid> {
+fn ingest_one(store: &Mutex<Store>, raw: &RawMessage, channel_id: Uuid) -> Result<Uuid> {
     let store = store.lock().expect("store mutex poisoned");
 
     let contact = store.find_or_create_contact_by_address(
@@ -104,7 +104,9 @@ fn ingest_one(store: &Mutex<Store>, raw: &RawMessage) -> Result<Uuid> {
 
     // Clone because `normalize` takes the RawMessage by value and the caller
     // expected to keep it.
-    let message = normalize(raw.clone(), contact.id, thread.id);
+    let mut message = normalize(raw.clone(), contact.id, thread.id);
+    // B-004: route replies through the same channel the message arrived on.
+    message.received_on_channel_id = Some(channel_id);
     store.insert_message(&message)?;
     debug!(id = %message.id, "ingestor: stored message");
     Ok(message.id)
@@ -142,8 +144,27 @@ mod tests {
     use crate::adapters::RawMessage;
     use crate::store::Store;
     use crate::runtime::events::EventBus;
-    use crate::types::Channel;
+    use crate::runtime::status::ChannelStatus;
+    use crate::types::{Channel, ChannelConfig};
     use std::collections::HashMap;
+
+    /// Insert a Telegram channel row so the FK on
+    /// `messages.received_on_channel_id` is satisfied.
+    fn insert_channel(store: &Mutex<Store>, id: Uuid) {
+        store.lock().unwrap().insert_channel_config(&ChannelConfig {
+            id,
+            channel: Channel::Telegram,
+            label: "test".into(),
+            keychain_ref: "u:p".into(),
+            enabled: true,
+            poll_interval_secs: 60,
+            last_sync_cursor: None,
+            last_sync_at: None,
+            status: ChannelStatus::Healthy,
+            last_error: None,
+            consecutive_failures: 0,
+        }).unwrap();
+    }
 
     fn raw(ext_thread: Option<&str>, sender: &str) -> RawMessage {
         RawMessage {
@@ -164,6 +185,8 @@ mod tests {
     #[tokio::test]
     async fn ingest_inserts_contact_thread_message() {
         let store = Arc::new(Mutex::new(Store::open_in_memory().unwrap()));
+        let channel_id = Uuid::new_v4();
+        insert_channel(&store, channel_id);
         let bus = EventBus::with_capacity(16);
         let mut rx = bus.subscribe();
         let (tx, handle) = spawn_ingestor(
@@ -173,7 +196,6 @@ mod tests {
             8,
             CancellationToken::new(),
         );
-        let channel_id = Uuid::new_v4();
 
         tx.send(IngestJob {
             channel_id,
@@ -183,26 +205,33 @@ mod tests {
         // First event must be MessageIngested.
         let evt = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
             .await.unwrap().unwrap();
-        match evt {
-            RuntimeEvent::MessageIngested { channel_id: got_ch, .. } => {
+        let ingested_id = match evt {
+            RuntimeEvent::MessageIngested { id, channel_id: got_ch } => {
                 assert_eq!(got_ch, channel_id);
+                id
             }
             other => panic!("unexpected event: {:?}", other),
-        }
+        };
 
         drop(tx);
         handle.await.unwrap();
+
+        // B-004: stored message must remember which channel it arrived on.
+        let store = store.lock().unwrap();
+        let stored = store.get_message(&ingested_id).unwrap();
+        assert_eq!(stored.received_on_channel_id, Some(channel_id));
     }
 
     #[tokio::test]
     async fn same_external_thread_reuses_existing_thread() {
         let store = Arc::new(Mutex::new(Store::open_in_memory().unwrap()));
+        let channel_id = Uuid::new_v4();
+        insert_channel(&store, channel_id);
         let bus = EventBus::with_capacity(16);
         let mut rx = bus.subscribe();
         let (tx, handle) = spawn_ingestor(
             Arc::clone(&store), bus, None, 8, CancellationToken::new(),
         );
-        let channel_id = Uuid::new_v4();
 
         tx.send(IngestJob {
             channel_id,
