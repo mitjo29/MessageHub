@@ -4,27 +4,27 @@ Issues and improvements queued for future plans. Each entry has a severity,
 discovered-during context, and a proposed fix. When work begins, promote the
 item to a proper plan under `docs/superpowers/plans/`.
 
-### B-006 — DTO camelCase / snake_case drift between 7b.2 and 7b.3
-
-**Severity:** Low  **Discovered:** Plan 7b.3 implementation (2026-04-22)
-
-7b.2's DTOs (`MessageRow`, `MessageDetail`, `ChannelInfo`, `UiConfig`,
-`SidebarCounts`, `ChannelCount`) were serialized without
-`#[serde(rename_all = "camelCase")]`, so their TS interfaces use
-snake_case field names (`sender_name`, `thread_id`, `channel_type`).
-7b.3's DTOs (`ReplyDraftDto`, `AiDraftDto`, `AiDraftSummaryDto`,
-`CloudStatusDto`) do have the `camelCase` rename. Frontend code ends up
-importing both styles; `ReplyModal.tsx` accesses `msg.sender_name`
-(snake) alongside `draft.updatedAt` (camel).
-
-Proposed fix: add `#[serde(rename_all = "camelCase")]` to the 7b.2 DTOs,
-update the TS types, and sweep the two consuming components
-(`MessageList.tsx`, `MessageDetail.tsx`) to use camelCase. Document the
-chosen convention in `CLAUDE.md`.
-
 ---
 
 ## Resolved
+
+### B-006 — DTO camelCase sweep — **Fixed (2026-04-24)**
+
+Added `#[serde(rename_all = "camelCase")]` to the five 7b.2 DTOs that
+lacked it: `MessageRow`, `AttachmentInfo`, `MessageDetail`,
+`ChannelInfo`, `UiConfig`. Rewrote `desktop/src/types.ts` field names to
+match (`channel_label` → `channelLabel`, `sender_name` → `senderName`,
+`is_read` → `isRead`, `size_bytes` → `sizeBytes`, `thread_id` →
+`threadId`, `channel_type` → `channelType`, `last_sync_at` →
+`lastSyncAt`, `db_path` → `dbPath`, `channel_count` → `channelCount`).
+
+Swept five consuming components — `MessageList.tsx`, `MessageDetail.tsx`,
+`ReplyModal.tsx`, `Sidebar.tsx`, `InboxContext.tsx`. Tauri *command*
+names (`mark_read`, `sidebar_counts`) stay snake_case — that's the IPC
+convention, not the DTO one. Convention documented in `CLAUDE.md`.
+
+Verified: `npm run build` (tsc + vite) passes, `cargo test --workspace`
+passes.
 
 ### B-009 — `send_email_reply` post-send lock poisoning — **Fixed (2026-04-24)**
 

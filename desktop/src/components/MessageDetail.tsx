@@ -21,7 +21,7 @@ export function MessageDetail() {
 
   useEffect(() => {
     if (!detail) return;
-    if (detail.is_read) return;
+    if (detail.isRead) return;
 
     const id = detail.id;
     dispatch({ type: "MARK_READ_LOCAL", id });
@@ -35,7 +35,7 @@ export function MessageDetail() {
     return () => {
       cancelled = true;
     };
-  }, [detail?.id, detail?.is_read, dispatch]);
+  }, [detail?.id, detail?.isRead, dispatch]);
 
   if (!detail) {
     return (
@@ -49,9 +49,9 @@ export function MessageDetail() {
     <div className="detail-pane">
       <div className="detail-head">
         <span className="channel">
-          [{detail.channel_label ?? detail.channel}]
+          [{detail.channelLabel ?? detail.channel}]
         </span>
-        <span className="sender">{detail.sender_name}</span>
+        <span className="sender">{detail.senderName}</span>
         <span className="time">{formatTime(detail.timestamp)}</span>
         {detail.channel === "Email" && (
           <button
@@ -60,7 +60,7 @@ export function MessageDetail() {
               dispatch({
                 type: "OPEN_REPLY",
                 messageId: detail.id,
-                threadId: detail.thread_id,
+                threadId: detail.threadId,
               })
             }
           >
@@ -80,7 +80,7 @@ export function MessageDetail() {
           <ul>
             {detail.attachments.map((a) => (
               <li key={a.filename}>
-                {a.filename} ({(a.size_bytes / 1024).toFixed(1)} KB)
+                {a.filename} ({(a.sizeBytes / 1024).toFixed(1)} KB)
               </li>
             ))}
           </ul>

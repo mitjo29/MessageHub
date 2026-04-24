@@ -2,39 +2,39 @@ export type MessageRow = {
   id: string;
   timestamp: string;
   channel: string;
-  channel_label: string | null;
-  sender_name: string;
+  channelLabel: string | null;
+  senderName: string;
   subject: string | null;
   preview: string;
   category: string | null;
   priority: number | null;
-  is_read: boolean;
+  isRead: boolean;
 };
 
 export type AttachmentInfo = {
   filename: string;
-  size_bytes: number;
+  sizeBytes: number;
 };
 
 export type MessageDetail = MessageRow & {
   body: string;
   html: string | null;
-  thread_id: string;
+  threadId: string;
   attachments: AttachmentInfo[];
 };
 
 export type ChannelInfo = {
   id: string;
-  channel_type: string;
+  channelType: string;
   label: string;
   enabled: boolean;
   status: string;
-  last_sync_at: string | null;
+  lastSyncAt: string | null;
 };
 
 export type UiConfig = {
-  db_path: string;
-  channel_count: number;
+  dbPath: string;
+  channelCount: number;
 };
 
 export type Filter =

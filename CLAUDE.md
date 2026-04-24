@@ -70,7 +70,8 @@ Schema-level: `messages.external_id` with a unique partial index on `(channel_ty
 
 ## Conventions worth preserving
 
-- Message IDs in `runtime-demo` are stable UUIDv5 hashes of `(kind, label)`. Re-running against the same TOML reuses the same `channels` row.
+- **IPC DTO field casing:** every `#[derive(Serialize)]` struct in `desktop/src-tauri/src/commands.rs` that crosses the Tauri boundary carries `#[serde(rename_all = "camelCase")]`. The TypeScript interfaces in `desktop/src/types.ts` mirror the camelCase field names. Tauri *command* names (e.g. `mark_read`, `sidebar_counts`) stay snake_case — that's the Tauri IPC command convention, not the DTO field one. Don't mix styles; the 7b.3 PR shipped with drift that B-006 cleaned up.
+- Message IDs are stable UUIDv5 hashes of `(kind, label)` via `messagehub_core::channel_id::stable_channel_id`. Used by `runtime-demo` and the desktop host so both map the same TOML entry to the same `channels` row. The seed format (`"{kind}:{label}"`) must not drift — a `format_pinned` test guards it.
 - `Category` enum values are the only legal classifier outputs; `parse_classification_response` rejects anything else.
 - Ignored tests fall into two buckets: "needs Ollama running" and "downloads a ~120MB embedding model." Gate new tests in the same way rather than making them unconditional.
 - When adding to the design, write a spec in `docs/superpowers/specs/` and a plan in `docs/superpowers/plans/` following the dated `NNNN-NN-NN-planX-<name>.md` naming. Link the spec from the module-level doc comment of whatever you build.

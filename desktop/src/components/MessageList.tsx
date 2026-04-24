@@ -112,13 +112,13 @@ export function MessageList() {
           data-row-id={m.id}
           role="option"
           aria-selected={selectedId === m.id}
-          className={`message-row${m.is_read ? "" : " unread"}${selectedId === m.id ? " selected" : ""}`}
+          className={`message-row${m.isRead ? "" : " unread"}${selectedId === m.id ? " selected" : ""}`}
           onClick={() => onClickRow(m)}
         >
           <div className="row-main">
             <span className="time">{formatTime(m.timestamp)}</span>
-            <span className="channel">[{m.channel_label ?? m.channel}]</span>
-            <span className="sender">{m.sender_name}</span>
+            <span className="channel">[{m.channelLabel ?? m.channel}]</span>
+            <span className="sender">{m.senderName}</span>
           </div>
           <div className="row-subject">{m.subject ?? "(no subject)"}</div>
           <div className="row-preview">{m.preview}</div>

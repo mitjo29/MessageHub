@@ -62,7 +62,7 @@ export function ReplyModal({ messageId, threadId, onClose }: Props) {
         if (cancelled) return;
         setSubject(ensureRePrefix(msg.subject));
         const quoted = quotedOriginal(
-          msg.sender_name,
+          msg.senderName,
           msg.timestamp,
           msg.body,
         );

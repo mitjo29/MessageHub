@@ -150,8 +150,8 @@ export function inboxReducer(
 
     case "MARK_READ_LOCAL": {
       const row = state.messages.find((m) => m.id === action.id);
-      if (!row || row.is_read) return state;
-      const markedRow: MessageRow = { ...row, is_read: true };
+      if (!row || row.isRead) return state;
+      const markedRow: MessageRow = { ...row, isRead: true };
       const messages =
         state.filter.kind === "unread"
           ? state.messages.filter((m) => m.id !== action.id)
@@ -161,7 +161,7 @@ export function inboxReducer(
         messages,
         counts: bumpCounts(state.counts, row, -1),
         detail: state.detail && state.detail.id === action.id
-          ? { ...state.detail, is_read: true }
+          ? { ...state.detail, isRead: true }
           : state.detail,
       };
     }
@@ -174,17 +174,17 @@ export function inboxReducer(
               id: state.detail.id,
               timestamp: state.detail.timestamp,
               channel: state.detail.channel,
-              channel_label: state.detail.channel_label,
-              sender_name: state.detail.sender_name,
+              channelLabel: state.detail.channelLabel,
+              senderName: state.detail.senderName,
               subject: state.detail.subject,
               preview: state.detail.preview,
               category: state.detail.category,
               priority: state.detail.priority,
-              is_read: true,
+              isRead: true,
             } as MessageRow)
           : null);
       if (!row) return state;
-      const revertedRow: MessageRow = { ...row, is_read: false };
+      const revertedRow: MessageRow = { ...row, isRead: false };
       const messages =
         state.filter.kind === "unread" &&
         !state.messages.some((m) => m.id === action.id)
@@ -197,7 +197,7 @@ export function inboxReducer(
         messages,
         counts: bumpCounts(state.counts, revertedRow, +1),
         detail: state.detail && state.detail.id === action.id
-          ? { ...state.detail, is_read: false }
+          ? { ...state.detail, isRead: false }
           : state.detail,
       };
     }

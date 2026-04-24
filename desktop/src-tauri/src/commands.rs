@@ -63,6 +63,7 @@ fn resolve_reply_channel(
 // ── DTOs ──────────────────────────────────────────────────────────────────────
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MessageRow {
     pub id: String,
     pub timestamp: String,
@@ -77,12 +78,14 @@ pub struct MessageRow {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AttachmentInfo {
     pub filename: String,
     pub size_bytes: u64,
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MessageDetail {
     #[serde(flatten)]
     pub row: MessageRow,
@@ -93,6 +96,7 @@ pub struct MessageDetail {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ChannelInfo {
     pub id: String,
     pub channel_type: String,
@@ -103,6 +107,7 @@ pub struct ChannelInfo {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UiConfig {
     pub db_path: String,
     pub channel_count: usize,

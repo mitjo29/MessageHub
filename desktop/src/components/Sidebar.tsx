@@ -77,22 +77,22 @@ export function Sidebar() {
       ) : (
         channels.map((c) => {
           const cc = counts?.byChannel.find(
-            (x) => x.channelType === c.channel_type,
+            (x) => x.channelType === c.channelType,
           );
           const active =
-            filter.kind === "channel" && filter.channelType === c.channel_type;
+            filter.kind === "channel" && filter.channelType === c.channelType;
           return (
             <Item
               key={c.id}
               active={active}
-              label={c.label || c.channel_type}
+              label={c.label || c.channelType}
               total={cc?.total ?? null}
               unread={cc?.unread ?? null}
               disabled={!c.enabled}
               onClick={() =>
                 setFilter({
                   kind: "channel",
-                  channelType: c.channel_type,
+                  channelType: c.channelType,
                 })
               }
             />
