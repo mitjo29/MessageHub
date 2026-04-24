@@ -12,6 +12,26 @@ function buildService(): TurndownService {
   });
   td.use(gfm);
 
+  // Drop tags whose content is never meant for readers. Without these,
+  // marketing emails leak their <style> CSS straight into the body
+  // (including CSS hidden behind the <!-- … --> old-browser trick).
+  td.remove([
+    "style",
+    "script",
+    "head",
+    "title",
+    "meta",
+    "link",
+    "noscript",
+  ]);
+
+  // Strip HTML comments entirely. Turndown's default behavior keeps the
+  // comment's text payload in some code paths.
+  td.addRule("strip-comments", {
+    filter: (node) => node.nodeType === 8 /* COMMENT_NODE */,
+    replacement: () => "",
+  });
+
   // Flatten Gmail wrapper divs so they don't inflate the markdown tree.
   // Content is rendered as if the wrapper weren't there — the quoted chunk
   // inside still surfaces its `>` lines for detectQuotedBlock to catch.

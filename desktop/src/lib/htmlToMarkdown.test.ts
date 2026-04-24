@@ -57,4 +57,34 @@ describe("htmlToMarkdown", () => {
     const md = htmlToMarkdown("<notahtmltag><<<>>>" as unknown as string);
     expect(typeof md).toBe("string");
   });
+
+  test("<style> contents are dropped, not leaked into the output", () => {
+    const html =
+      `<style><!-- a { color: red; } .foo { padding: 2rem; } --></style>` +
+      `<p>Real content.</p>`;
+    const md = htmlToMarkdown(html);
+    expect(md).toContain("Real content.");
+    expect(md).not.toContain("color: red");
+    expect(md).not.toContain(".foo");
+    expect(md).not.toContain("<!--");
+  });
+
+  test("<script> and <head> metadata are dropped", () => {
+    const html =
+      `<head><title>Ignore me</title><meta charset="utf-8"></head>` +
+      `<script>alert(1)</script>` +
+      `<p>Real.</p>`;
+    const md = htmlToMarkdown(html);
+    expect(md).toContain("Real.");
+    expect(md).not.toContain("Ignore me");
+    expect(md).not.toContain("alert(1)");
+  });
+
+  test("standalone HTML comment is stripped", () => {
+    const html = `<p>Hi.</p><!-- tracking beacon --><p>Bye.</p>`;
+    const md = htmlToMarkdown(html);
+    expect(md).toContain("Hi.");
+    expect(md).toContain("Bye.");
+    expect(md).not.toContain("tracking beacon");
+  });
 });

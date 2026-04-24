@@ -130,7 +130,23 @@ function sourceMarkdown(detail: MessageDetail): string {
     const md = htmlToMarkdown(detail.html);
     if (md.trim()) return md;
   }
-  return detail.body ?? "";
+  const body = detail.body ?? "";
+  // Some senders put raw HTML in the text/plain alternative. If we see
+  // tell-tale tags, route it through turndown so <style>/<!-- --> junk
+  // is stripped rather than rendered verbatim.
+  if (looksLikeHtml(body)) {
+    const md = htmlToMarkdown(body);
+    if (md.trim()) return md;
+  }
+  return body;
+}
+
+function looksLikeHtml(s: string): boolean {
+  return (
+    /<\s*(html|body|head|style|script|div|p|table|a\s|img\s|br\s*\/?>|!--)/i.test(
+      s,
+    )
+  );
 }
 
 /** Recursively flatten React children into a plain string for autolink compare. */
