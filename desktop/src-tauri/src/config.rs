@@ -8,6 +8,12 @@ use std::path::{Path, PathBuf};
 pub struct DesktopConfig {
     pub database: String,
     pub password: String,
+    /// Optional path to a markdown file containing the user's self-authored
+    /// profile (languages, role, relationships, tone). Injected into cloud
+    /// draft prompts via `UserProfile`. Resolved against the TOML's parent
+    /// directory when relative. Missing file → empty profile (graceful).
+    #[serde(default)]
+    pub profile_path: Option<String>,
     #[serde(default)]
     pub cloud: Option<TauriCloudConfig>,
     #[serde(default)]

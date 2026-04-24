@@ -57,6 +57,7 @@ impl AppState {
         password: &str,
         email_connections: HashMap<Uuid, EmailConnection>,
         cloud_cfg: Option<&crate::config::TauriCloudConfig>,
+        profile: UserProfile,
     ) -> Result<Self, String> {
         let store = Store::open(std::path::Path::new(db_path), password)
             .map_err(|e| format!("failed to open store: {}", e))?;
@@ -92,14 +93,11 @@ impl AppState {
                         _ => anthropic,
                     };
                     let provider: Arc<dyn CloudProvider> = Arc::new(anthropic);
-                    // TODO(7b.3 follow-up): load real UserProfile from vault. Empty profile
-                    // here means drafts lack personalization signal — see Plan 7b.4+ for
-                    // where this should be wired in.
                     let actions = CloudActions::new(
                         provider,
                         redactor,
                         None::<Arc<Retriever>>,
-                        UserProfile { content: String::new() },
+                        profile,
                         model.clone(),
                     );
                     (Some(Arc::new(actions)), Some(model.clone()))

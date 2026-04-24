@@ -50,21 +50,6 @@ Proposed fix: move the helper to `messagehub_core::channel_id` (or
 call sites. Acknowledged deliberately during 7b.3 planning — flagging
 here so it's tracked.
 
-### B-008 — `UserProfile` passed to `CloudActions` is always empty
-
-**Severity:** Medium  **Discovered:** Plan 7b.3 code review (2026-04-22)
-
-`desktop/src-tauri/src/state.rs` constructs `CloudActions` with
-`UserProfile { content: String::new() }`. Cloud drafts therefore lack
-the personalization signal (tone preferences, language, relationships)
-that `ai/cloud/actions/draft.rs` expects. UAT quality may be noticeably
-worse than production once a real profile is wired in. TODO present in
-the code.
-
-Proposed fix: load the profile from the knowledge vault at startup
-(same path the ingest pipeline uses in `runtime-demo`). Ties loosely to
-a future 7b.x "settings / profile" plan.
-
 ### B-009 — `send_email_reply` post-send store re-lock propagates mutex-poisoning errors
 
 **Severity:** Low  **Discovered:** Plan 7b.3 spec review (2026-04-22)
@@ -83,6 +68,25 @@ already does.
 ---
 
 ## Resolved
+
+### B-008 — `UserProfile` always empty — **Fixed (2026-04-24)**
+
+Both the desktop host and `runtime-demo` were constructing their AI
+integration points (`CloudActions` / `AiPipeline`) with
+`UserProfile { content: String::new() }`. The backlog entry's premise
+that "runtime-demo already loads the profile" was wrong — the bug was
+symmetric across both binaries.
+
+Fix: new optional `profile_path` key at the root of `messagehub.toml`
+(next to `database`). Resolved the same way as `database` (relative →
+anchored at TOML parent; absolute → passthrough), then fed through
+`UserProfile::load`, which already degrades gracefully on missing file.
+Path is threaded into `AppState::init` (desktop) and the `AiPipeline`
+builder (runtime-demo). TODO comment removed from `state.rs`.
+
+Deliberately chose a scalar key over a `[knowledge]` block — defers the
+vault-layout convention question until the indexer actually gets wired
+through config (no plan scheduled for that yet).
 
 ### B-004 — `send_email_reply` first-match channel routing — **Fixed in branch 1 (2026-04-24)**
 

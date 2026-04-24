@@ -50,6 +50,12 @@ use serde::Deserialize;
 struct Config {
     database: String,
     password: String,
+    /// Optional path to a markdown file containing the user's self-authored
+    /// profile. Injected into the classifier prompt via `UserProfile`.
+    /// Resolved against the TOML's parent dir when relative. Missing file
+    /// → empty profile (graceful).
+    #[serde(default)]
+    profile_path: Option<String>,
     #[serde(default)]
     ai: Option<AiConfig>,
     #[serde(default)]
@@ -344,10 +350,29 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             let model = ai.model     .clone().unwrap_or_else(|| "llama3.2".into());
             let llm: Arc<dyn messagehub_core::ai::llm::LlmBackend> =
                 Arc::new(OllamaLlm::new(url.clone(), model.clone()));
+            // Same resolution rule as `database`: relative path → anchored
+            // at the TOML's parent; absolute → passthrough. Missing file
+            // is non-fatal; UserProfile::load returns empty content.
+            let profile = match config.profile_path.as_deref() {
+                Some(raw) => {
+                    let raw_path = std::path::Path::new(raw);
+                    let resolved = if raw_path.is_absolute() {
+                        raw_path.to_path_buf()
+                    } else {
+                        config_path
+                            .parent()
+                            .unwrap_or_else(|| std::path::Path::new("."))
+                            .join(raw_path)
+                    };
+                    eprintln!("runtime-demo: profile {}", resolved.display());
+                    UserProfile::load(&resolved)?
+                }
+                None => UserProfile { content: String::new() },
+            };
             let pipeline = AiPipeline::new(
                 llm,
                 None, // no retriever in Plan 7a — see spec §Non-Goals
-                UserProfile { content: String::new() },
+                profile,
             );
             builder = builder.with_ai_pipeline(Arc::new(pipeline));
             eprintln!("runtime-demo: AI tier enabled (ollama at {}, model {})", url, model);

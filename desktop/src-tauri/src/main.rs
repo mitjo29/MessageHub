@@ -84,6 +84,26 @@ fn try_init() -> Result<AppState, String> {
         db_path.display(),
     );
 
+    // Resolve profile_path the same way as `database`: relative paths are
+    // anchored at the TOML's parent dir, absolute paths pass through. If
+    // the key is absent we pass an empty UserProfile (equivalent to old
+    // behavior). UserProfile::load handles missing files gracefully on its
+    // own — no extra branch needed here.
+    let profile = match cfg.profile_path.as_deref() {
+        Some(raw) => {
+            let raw_path = std::path::Path::new(raw);
+            let resolved = if raw_path.is_absolute() {
+                raw_path.to_path_buf()
+            } else {
+                path.parent().unwrap_or_else(|| std::path::Path::new(".")).join(raw_path)
+            };
+            eprintln!("messagehub-desktop: profile {}", resolved.display());
+            messagehub_core::ai::profile::UserProfile::load(&resolved)
+                .map_err(|e| format!("failed to load profile '{}': {}", resolved.display(), e))?
+        }
+        None => messagehub_core::ai::profile::UserProfile { content: String::new() },
+    };
+
     // Build email-connections map from [[channels]]. Telegram entries are
     // skipped — no send path for them in 7b.3.
     let mut email_connections = std::collections::HashMap::new();
@@ -106,5 +126,5 @@ fn try_init() -> Result<AppState, String> {
         }
     }
 
-    AppState::init(&db_path_str, &cfg.password, email_connections, cfg.cloud.as_ref())
+    AppState::init(&db_path_str, &cfg.password, email_connections, cfg.cloud.as_ref(), profile)
 }

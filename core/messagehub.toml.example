@@ -6,6 +6,13 @@
 database = "./messagehub.db"
 password = "change-me-to-something-unique"
 
+# Optional. Path to a markdown file with the user's self-authored profile
+# (languages, role, tone preferences, key relationships). Injected into
+# classifier + cloud-draft prompts so the AI has standing context about
+# who's sending. Relative paths anchor at this file's directory.
+# Missing file → empty profile, AI degrades gracefully (no error).
+# profile_path = "./user-profile.md"
+
 # Optional AI tier. Delete or set `enabled = false` to run ingest-only.
 [ai]
 enabled = false
