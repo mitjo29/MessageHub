@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { api } from "../api";
 import { useInbox } from "../state/InboxContext";
+import { MessageBody } from "./MessageBody";
 
 function formatTime(isoString: string): string {
   const d = new Date(isoString);
@@ -72,7 +73,7 @@ export function MessageDetail() {
         {detail.category ?? "—"}
         {detail.priority !== null ? ` · P${detail.priority}` : ""}
       </div>
-      <pre className="detail-body">{detail.body}</pre>
+      <MessageBody detail={detail} />
       {detail.attachments.length > 0 && (
         <div className="detail-attachments">
           <strong>Attachments:</strong>
