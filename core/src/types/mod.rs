@@ -5,5 +5,5 @@ pub mod thread;
 
 pub use channel::{Channel, ChannelConfig};
 pub use contact::{Contact, ContactIdentity};
-pub use message::{Attachment, Message, MessageContent, PriorityScore};
+pub use message::{Attachment, Message, MessageContent, PriorityScore, ReplyHeaders};
 pub use thread::Thread;

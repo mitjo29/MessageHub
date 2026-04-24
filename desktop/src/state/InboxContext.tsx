@@ -30,6 +30,7 @@ export type InboxState = {
   panelWidths: { sidebar: number; list: number };
   error: string | null;
   loading: boolean;
+  replyFor: { messageId: string; threadId: string } | null;
 };
 
 export type InboxAction =
@@ -48,7 +49,9 @@ export type InboxAction =
   | { type: "REVERT_MARK_READ_LOCAL"; id: string }
   | { type: "SET_PANEL_WIDTHS"; widths: { sidebar: number; list: number } }
   | { type: "SET_ERROR"; error: string | null }
-  | { type: "SET_LOADING"; loading: boolean };
+  | { type: "SET_LOADING"; loading: boolean }
+  | { type: "OPEN_REPLY"; messageId: string; threadId: string }
+  | { type: "CLOSE_REPLY" };
 
 export function loadInitialPanelWidths(): { sidebar: number; list: number } {
   try {
@@ -79,6 +82,7 @@ export const initialState: InboxState = {
   panelWidths: DEFAULT_PANEL_WIDTHS, // hydrated on mount; see provider
   error: null,
   loading: false,
+  replyFor: null,
 };
 
 function bumpCounts(
@@ -206,6 +210,14 @@ export function inboxReducer(
 
     case "SET_LOADING":
       return { ...state, loading: action.loading };
+
+    case "OPEN_REPLY":
+      return {
+        ...state,
+        replyFor: { messageId: action.messageId, threadId: action.threadId },
+      };
+    case "CLOSE_REPLY":
+      return { ...state, replyFor: null };
 
     default:
       return state;

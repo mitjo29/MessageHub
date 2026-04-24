@@ -19,6 +19,13 @@ fn main() {
                     commands::get_config,
                     commands::mark_read,
                     commands::sidebar_counts,
+                    commands::save_reply_draft,
+                    commands::get_reply_draft,
+                    commands::delete_reply_draft,
+                    commands::send_email_reply,
+                    commands::ai_draft_reply,
+                    commands::list_ai_drafts,
+                    commands::cloud_config_status,
                 ])
                 .run(tauri::generate_context!())
                 .expect("error while running tauri application");
@@ -37,6 +44,13 @@ fn main() {
                     commands::get_config,
                     commands::mark_read,
                     commands::sidebar_counts,
+                    commands::save_reply_draft,
+                    commands::get_reply_draft,
+                    commands::delete_reply_draft,
+                    commands::send_email_reply,
+                    commands::ai_draft_reply,
+                    commands::list_ai_drafts,
+                    commands::cloud_config_status,
                 ])
                 .run(tauri::generate_context!())
                 .expect("error while running tauri application");
@@ -70,5 +84,27 @@ fn try_init() -> Result<AppState, String> {
         db_path.display(),
     );
 
-    AppState::init(&db_path_str, &cfg.password)
+    // Build email-connections map from [[channels]]. Telegram entries are
+    // skipped — no send path for them in 7b.3.
+    let mut email_connections = std::collections::HashMap::new();
+    for entry in &cfg.channels {
+        if entry.kind == "email" && entry.enabled {
+            let creds: crate::config::EmailCredentials = entry
+                .credentials
+                .clone()
+                .try_into()
+                .map_err(|e: toml::de::Error| format!("channel '{}': {}", entry.label, e))?;
+            let id = crate::state::stable_channel_id(&entry.kind, &entry.label);
+            email_connections.insert(id, crate::state::EmailConnection {
+                imap_host: creds.imap_host,
+                imap_port: creds.imap_port,
+                smtp_host: creds.smtp_host,
+                smtp_port: creds.smtp_port,
+                username: creds.username,
+                password: creds.password,
+            });
+        }
+    }
+
+    AppState::init(&db_path_str, &cfg.password, email_connections, cfg.cloud.as_ref())
 }

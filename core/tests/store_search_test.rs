@@ -49,6 +49,7 @@ fn seed_messages(store: &Store) {
                 html: None,
                 subject: Some(subject.into()),
                 attachments: vec![],
+                reply_headers: None,
             },
             timestamp: Utc::now(),
             metadata: HashMap::new(),
@@ -57,6 +58,7 @@ fn seed_messages(store: &Store) {
             is_read: false,
             is_archived: false,
             external_id: None,
+            received_on_channel_id: None,
         };
         store.insert_message(&msg).unwrap();
     }

@@ -57,6 +57,6 @@ pub struct CloudConfig {
 
 impl Default for CloudConfig {
     fn default() -> Self {
-        Self { redact: false }
+        Self { redact: true }
     }
 }

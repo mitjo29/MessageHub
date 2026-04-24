@@ -152,6 +152,7 @@ mod tests {
                 html: None,
                 subject: Some("Test subject".to_string()),
                 attachments: vec![],
+                reply_headers: None,
             },
             timestamp: chrono::Utc::now(),
             metadata: HashMap::new(),
@@ -160,6 +161,7 @@ mod tests {
             is_read: false,
             is_archived: false,
             external_id: None,
+            received_on_channel_id: None,
         };
         let id = msg.id;
         store.insert_message(&msg).unwrap();

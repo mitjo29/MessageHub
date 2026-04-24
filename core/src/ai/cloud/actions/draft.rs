@@ -13,7 +13,7 @@ use uuid::Uuid;
 /// user. NOTE: stripping without replacement leaves grammatically broken
 /// output (e.g. "Hi , yes tomorrow works.") — in practice hallucinations
 /// are rare enough that this is preferable to letting the token through.
-static LEFTOVER_TOKEN_RE: LazyLock<Regex> = LazyLock::new(|| {
+pub(super) static LEFTOVER_TOKEN_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\[(PERSON|EMAIL|PHONE)_\d+\]").expect("leftover token regex must compile")
 });
 
@@ -28,7 +28,7 @@ use crate::error::{CoreError, Result};
 use crate::knowledge::{RetrievalFilters, Retriever};
 use crate::store::{NewDraft, Store};
 
-const SYSTEM_PROMPT: &str = r#"You are drafting a reply to an incoming message on behalf of the user. The user will review your draft before sending — do not invent commitments, prices, or decisions.
+pub(super) const SYSTEM_PROMPT: &str = r#"You are drafting a reply to an incoming message on behalf of the user. The user will review your draft before sending — do not invent commitments, prices, or decisions.
 
 You must respond with a single JSON object and nothing else, matching this schema:
 
@@ -44,9 +44,9 @@ Do not wrap the JSON in code fences unless absolutely necessary."#;
 const ALLOWED_LANGUAGES: &[&str] = &["en", "fr", "de"];
 
 #[derive(Debug, Deserialize)]
-struct ParsedDraft {
-    draft: String,
-    language: String,
+pub(super) struct ParsedDraft {
+    pub(super) draft: String,
+    pub(super) language: String,
 }
 
 /// Draft a reply to `message_id` via the cloud provider.
@@ -169,7 +169,7 @@ pub async fn draft_reply(
     })
 }
 
-fn build_user_prompt(
+pub(super) fn build_user_prompt(
     channel: &str,
     sender: &str,
     subject: &str,
@@ -191,7 +191,7 @@ fn build_user_prompt(
     out
 }
 
-fn parse_response(raw: &str) -> Result<ParsedDraft> {
+pub(super) fn parse_response(raw: &str) -> Result<ParsedDraft> {
     let stripped = strip_code_fences(raw);
     let json_slice = first_balanced_object(&stripped).ok_or_else(|| {
         CoreError::Cloud(format!("no JSON object in cloud response: {:?}", raw))
@@ -212,7 +212,7 @@ fn parse_response(raw: &str) -> Result<ParsedDraft> {
 
 /// sqlite-vec L2 distance → 0..1 similarity. For 384-dim unit vectors
 /// distances are roughly 0..2; this maps monotonically.
-fn similarity_from_distance(distance: f32) -> f32 {
+pub(super) fn similarity_from_distance(distance: f32) -> f32 {
     (1.0 - (distance / 2.0).clamp(0.0, 1.0)).clamp(0.0, 1.0)
 }
 

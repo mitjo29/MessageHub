@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use mail_parser::MimeHeaders;
 use tracing::{debug, info, warn};
+use uuid::Uuid;
 
 use crate::error::{CoreError, Result};
 use crate::types::{Channel, ChannelConfig, MessageContent};
@@ -37,6 +38,85 @@ impl Default for ImapSettings {
             smtp_port: 587,
         }
     }
+}
+
+/// Canonicalize a (bare or angle-wrapped) RFC 5322 msg-id to `<id>` form.
+/// Returns `None` if the input is empty after trimming or contains characters
+/// that cannot legally appear inside a msg-id (whitespace or angle brackets
+/// within the identifier). Callers are expected to omit the header entirely
+/// when `None` is returned, rather than emitting an empty header line.
+fn wrap_angle(s: &str) -> Option<String> {
+    let t = s.trim().trim_start_matches('<').trim_end_matches('>').trim();
+    if t.is_empty()
+        || t.bytes().any(|b| matches!(b, b'<' | b'>' | b' ' | b'\t' | b'\r' | b'\n'))
+    {
+        return None;
+    }
+    Some(format!("<{}>", t))
+}
+
+/// Build a lettre [`Message`] for a threaded reply, honouring RFC 5322
+/// `In-Reply-To`, `References`, and a generated `Message-ID` scoped to the
+/// SMTP host.
+///
+/// Returns [`CoreError::InvalidInput`] if `content.reply_headers` or
+/// `content.text` is `None`.
+pub fn build_reply_message(
+    from_username: &str,
+    content: &MessageContent,
+    smtp_host: &str,
+) -> Result<lettre::Message> {
+    let headers = content.reply_headers.as_ref().ok_or_else(|| {
+        CoreError::InvalidInput("build_reply_message called without reply_headers".into())
+    })?;
+    let text = content.text.as_deref().ok_or_else(|| {
+        CoreError::InvalidInput("reply body text is required".into())
+    })?;
+
+    let subject_raw = content.subject.as_deref().unwrap_or("");
+    let subject = if subject_raw.trim_start().to_ascii_lowercase().starts_with("re:") {
+        subject_raw.to_string()
+    } else if subject_raw.is_empty() {
+        "Re:".to_string()
+    } else {
+        format!("Re: {}", subject_raw)
+    };
+
+    let from_addr: lettre::message::Mailbox = from_username.parse()
+        .map_err(|e: lettre::address::AddressError| {
+            CoreError::InvalidInput(format!("invalid from address: {}", e))
+        })?;
+    let to_addr: lettre::message::Mailbox = headers.to.parse()
+        .map_err(|e: lettre::address::AddressError| {
+            CoreError::InvalidInput(format!("invalid to address: {}", e))
+        })?;
+
+    let in_reply_to_opt = wrap_angle(&headers.in_reply_to);
+    let references_joined: String = headers.references.iter()
+        .filter_map(|r| wrap_angle(r))
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let message_id = format!("<{}@{}>", Uuid::new_v4(), smtp_host);
+
+    let mut builder = lettre::Message::builder()
+        .from(from_addr)
+        .to(to_addr)
+        .subject(subject)
+        .message_id(Some(message_id));
+
+    if let Some(irt) = in_reply_to_opt {
+        builder = builder.in_reply_to(irt);
+    }
+    if !references_joined.is_empty() {
+        builder = builder.references(references_joined);
+    }
+
+    let msg = builder
+        .body(text.to_string())
+        .map_err(|e| CoreError::Channel(format!("failed to build email: {}", e)))?;
+
+    Ok(msg)
 }
 
 impl EmailAdapter {
@@ -354,25 +434,29 @@ impl ChannelAdapter for EmailAdapter {
             CoreError::Connection("password not set".to_string())
         })?;
 
-        let text = content.text.as_deref().ok_or_else(|| {
-            CoreError::InvalidInput("email body text is required".to_string())
-        })?;
+        let email = if content.reply_headers.is_some() {
+            build_reply_message(username, content, smtp_host)?
+        } else {
+            // Legacy path — thread_id used as the destination address.
+            // No callers today; kept for forward compat.
+            let text = content.text.as_deref().ok_or_else(|| {
+                CoreError::InvalidInput("email body text is required".to_string())
+            })?;
+            let subject = content.subject.as_deref().unwrap_or("Re:");
+            lettre::Message::builder()
+                .from(username.parse().map_err(|e: lettre::address::AddressError| {
+                    CoreError::InvalidInput(format!("invalid from address: {}", e))
+                })?)
+                .to(thread_id.parse().map_err(|e: lettre::address::AddressError| {
+                    CoreError::InvalidInput(format!("invalid to address: {}", e))
+                })?)
+                .subject(subject)
+                .body(text.to_string())
+                .map_err(|e| CoreError::Channel(format!("failed to build email: {}", e)))?
+        };
 
-        let subject = content.subject.as_deref().unwrap_or("Re:");
-
-        let email = lettre::Message::builder()
-            .from(username.parse().map_err(|e: lettre::address::AddressError| {
-                CoreError::InvalidInput(format!("invalid from address: {}", e))
-            })?)
-            .to(thread_id.parse().map_err(|e: lettre::address::AddressError| {
-                CoreError::InvalidInput(format!("invalid to address: {}", e))
-            })?)
-            .subject(subject)
-            .body(text.to_string())
-            .map_err(|e| CoreError::Channel(format!("failed to build email: {}", e)))?;
-
-        use lettre::{AsyncSmtpTransport, AsyncTransport, Tokio1Executor};
         use lettre::transport::smtp::authentication::Credentials;
+        use lettre::{AsyncSmtpTransport, AsyncTransport, Tokio1Executor};
 
         let creds = Credentials::new(username.clone(), password.clone());
 

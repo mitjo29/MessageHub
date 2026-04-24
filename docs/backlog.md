@@ -4,11 +4,97 @@ Issues and improvements queued for future plans. Each entry has a severity,
 discovered-during context, and a proposed fix. When work begins, promote the
 item to a proper plan under `docs/superpowers/plans/`.
 
-*(Empty — no open items at the moment.)*
+### B-005 — Tauri config resolver can't find `desktop/messagehub.toml`
+
+**Severity:** Low  **Discovered:** Plan 7b.3 UAT (2026-04-22)
+
+`desktop/src-tauri/src/config.rs::resolve_config_path` checks `./`,
+`../core/`, `../../core/`, `core/`. From Tauri dev's CWD (`desktop/src-tauri/`)
+none of those match `desktop/messagehub.toml`. Users who put their config
+at the "obvious" location (next to the desktop crate) get silently
+ignored — the resolver finds `core/messagehub.toml` via the
+`../../core/` candidate and uses that instead.
+
+Proposed fix: add `../messagehub.toml` as a candidate. One line.
+
+### B-006 — DTO camelCase / snake_case drift between 7b.2 and 7b.3
+
+**Severity:** Low  **Discovered:** Plan 7b.3 implementation (2026-04-22)
+
+7b.2's DTOs (`MessageRow`, `MessageDetail`, `ChannelInfo`, `UiConfig`,
+`SidebarCounts`, `ChannelCount`) were serialized without
+`#[serde(rename_all = "camelCase")]`, so their TS interfaces use
+snake_case field names (`sender_name`, `thread_id`, `channel_type`).
+7b.3's DTOs (`ReplyDraftDto`, `AiDraftDto`, `AiDraftSummaryDto`,
+`CloudStatusDto`) do have the `camelCase` rename. Frontend code ends up
+importing both styles; `ReplyModal.tsx` accesses `msg.sender_name`
+(snake) alongside `draft.updatedAt` (camel).
+
+Proposed fix: add `#[serde(rename_all = "camelCase")]` to the 7b.2 DTOs,
+update the TS types, and sweep the two consuming components
+(`MessageList.tsx`, `MessageDetail.tsx`) to use camelCase. Document the
+chosen convention in `CLAUDE.md`.
+
+### B-007 — `stable_channel_id` duplicated between runtime-demo and desktop
+
+**Severity:** Low  **Discovered:** Plan 7b.3 spec review (2026-04-21)
+
+`core/src/bin/runtime-demo.rs::stable_channel_id` and
+`desktop/src-tauri/src/state.rs::stable_channel_id` are byte-identical.
+They must stay in lockstep — a one-character drift breaks the
+Reply↔runtime channel-id contract (replies would look up the wrong
+channel credentials).
+
+Proposed fix: move the helper to `messagehub_core::channel_id` (or
+`messagehub_core::config`) as a public function, import it from both
+call sites. Acknowledged deliberately during 7b.3 planning — flagging
+here so it's tracked.
+
+### B-008 — `UserProfile` passed to `CloudActions` is always empty
+
+**Severity:** Medium  **Discovered:** Plan 7b.3 code review (2026-04-22)
+
+`desktop/src-tauri/src/state.rs` constructs `CloudActions` with
+`UserProfile { content: String::new() }`. Cloud drafts therefore lack
+the personalization signal (tone preferences, language, relationships)
+that `ai/cloud/actions/draft.rs` expects. UAT quality may be noticeably
+worse than production once a real profile is wired in. TODO present in
+the code.
+
+Proposed fix: load the profile from the knowledge vault at startup
+(same path the ingest pipeline uses in `runtime-demo`). Ties loosely to
+a future 7b.x "settings / profile" plan.
+
+### B-009 — `send_email_reply` post-send store re-lock propagates mutex-poisoning errors
+
+**Severity:** Low  **Discovered:** Plan 7b.3 spec review (2026-04-22)
+
+`desktop/src-tauri/src/commands.rs::send_email_reply` uses `?` on the
+post-send `state.store.lock()` call. If the mutex is poisoned (another
+thread panicked while holding it), the command returns `Err` instead of
+`Ok(())` — but the spec says "log but return Ok, the email already
+left." Low-probability path (requires a panic in a lock-holding
+thread).
+
+Proposed fix: match on the `lock()` result and log-then-swallow on
+poisoning, same as the inner `delete_reply_draft` failure path
+already does.
 
 ---
 
 ## Resolved
+
+### B-004 — `send_email_reply` first-match channel routing — **Fixed in branch 1 (2026-04-24)**
+
+Schema-based fix: migration 008 adds `messages.received_on_channel_id`
+(FK → `channels.id`); the ingestor sets it from `IngestJob.channel_id`
+at write time; `send_email_reply` now resolves through a new
+`resolve_reply_channel` helper that prefers the recorded receiving
+channel and falls back to single-variant match for legacy NULL rows
+(ambiguous legacy errors rather than guessing). Five unit tests in
+`commands::tests::resolver_*` pin the precedence rules. Pre-existing
+TODO at `commands.rs:148` for label display is now unblocked but not
+yet executed — separate follow-up.
 
 ### B-003 — Ingest has no idempotency — **Fixed in Plan 7b.2.1 (2026-04-21)**
 

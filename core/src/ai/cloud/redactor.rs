@@ -21,6 +21,7 @@ pub type ReverseMap = HashMap<String, String>;
 ///
 /// Same original → same token across one `redact` call (stable numbering
 /// within the call). Different calls get fresh maps.
+#[derive(Clone)]
 pub struct Redactor {
     /// Per-name compiled regex (case-insensitive, longest-first).
     name_regexes: Vec<(String, Regex)>,

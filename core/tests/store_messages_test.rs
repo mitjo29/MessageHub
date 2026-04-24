@@ -51,6 +51,7 @@ fn make_message(sender_id: Uuid, thread_id: Uuid) -> Message {
             html: None,
             subject: Some("Contract Review".into()),
             attachments: vec![],
+            reply_headers: None,
         },
         timestamp: Utc::now(),
         metadata: HashMap::new(),
@@ -59,6 +60,7 @@ fn make_message(sender_id: Uuid, thread_id: Uuid) -> Message {
         is_read: false,
         is_archived: false,
         external_id: None,
+        received_on_channel_id: None,
     }
 }
 

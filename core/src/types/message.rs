@@ -19,6 +19,12 @@ pub struct Message {
     pub is_archived: bool,
     #[serde(default)]
     pub external_id: Option<String>,
+    /// `channels.id` of the configured channel that ingested this message.
+    /// `None` for legacy rows from before migration 008 — `send_email_reply`
+    /// falls back to first-match for those. Always set on messages ingested
+    /// by the runtime since 7b.x.
+    #[serde(default)]
+    pub received_on_channel_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,6 +33,25 @@ pub struct MessageContent {
     pub html: Option<String>,
     pub subject: Option<String>,
     pub attachments: Vec<Attachment>,
+    /// Set on outbound messages the Tauri layer produces for replies;
+    /// always `None` for messages ingested from adapters.
+    #[serde(default)]
+    pub reply_headers: Option<ReplyHeaders>,
+}
+
+/// Threading metadata for an outbound reply. When present, the email adapter
+/// renders `In-Reply-To` / `References` / a fresh `Message-ID` so the reply
+/// threads in the recipient's client. Inbound messages always have this as
+/// `None`.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct ReplyHeaders {
+    /// RFC 5322 destination address, typically the original sender.
+    pub to: String,
+    /// The original message's Message-ID (bare — no `<...>` wrapping needed).
+    pub in_reply_to: String,
+    /// Existing References chain + the original's Message-ID appended. Bare
+    /// ids, one per Vec entry; the adapter wraps each in `<...>`.
+    pub references: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -337,6 +337,7 @@ mod tests {
             html: None,
             subject: None,
             attachments: vec![],
+            reply_headers: None,
         };
 
         let result = adapter.send_reply("123", &content).await;

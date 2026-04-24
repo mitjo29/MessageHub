@@ -4,6 +4,7 @@ pub mod drafts;
 pub mod contacts;
 pub mod knowledge;
 pub mod messages;
+pub mod reply_drafts;
 mod migrations;
 
 use std::path::Path;
@@ -43,6 +44,7 @@ pub use ai_log::AiDecision;
 pub use drafts::{DraftRecord, NewDraft};
 pub use knowledge::VaultPersonSummary;
 pub use messages::MessageFilter;
+pub use reply_drafts::{NewReplyDraft, ReplyDraft};
 
 pub struct Store {
     conn: Connection,

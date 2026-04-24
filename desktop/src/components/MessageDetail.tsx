@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { api } from "../api";
 import { useInbox } from "../state/InboxContext";
+import { MessageBody } from "./MessageBody";
 
 function formatTime(isoString: string): string {
   const d = new Date(isoString);
@@ -52,13 +53,27 @@ export function MessageDetail() {
         </span>
         <span className="sender">{detail.sender_name}</span>
         <span className="time">{formatTime(detail.timestamp)}</span>
+        {detail.channel === "Email" && (
+          <button
+            className="message-detail-reply"
+            onClick={() =>
+              dispatch({
+                type: "OPEN_REPLY",
+                messageId: detail.id,
+                threadId: detail.thread_id,
+              })
+            }
+          >
+            Reply
+          </button>
+        )}
       </div>
       <h2 className="detail-subject">{detail.subject ?? "(no subject)"}</h2>
       <div className="detail-meta">
         {detail.category ?? "—"}
         {detail.priority !== null ? ` · P${detail.priority}` : ""}
       </div>
-      <pre className="detail-body">{detail.body}</pre>
+      <MessageBody detail={detail} />
       {detail.attachments.length > 0 && (
         <div className="detail-attachments">
           <strong>Attachments:</strong>
