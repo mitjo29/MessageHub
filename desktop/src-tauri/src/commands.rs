@@ -654,10 +654,18 @@ pub async fn send_email_reply(
 
     send_result.map_err(|e| format!("smtp send: {}", e))?;
 
-    // Best-effort draft cleanup. Logged but not surfaced — the email already left.
-    let store = state.store.lock().map_err(|e| format!("store lock: {}", e))?;
-    if let Err(e) = store.delete_reply_draft(&thread) {
-        eprintln!("send_email_reply: delete_reply_draft failed: {}", e);
+    // Best-effort draft cleanup. The email already left — no recoverable
+    // failure from here on propagates to the caller. Both the lock
+    // acquisition (poisoning) and the delete itself log-and-swallow.
+    match state.store.lock() {
+        Ok(store) => {
+            if let Err(e) = store.delete_reply_draft(&thread) {
+                eprintln!("send_email_reply: delete_reply_draft failed: {}", e);
+            }
+        }
+        Err(e) => {
+            eprintln!("send_email_reply: store lock poisoned, skipping draft cleanup: {}", e);
+        }
     }
     Ok(())
 }

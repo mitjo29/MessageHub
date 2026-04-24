@@ -22,24 +22,21 @@ update the TS types, and sweep the two consuming components
 (`MessageList.tsx`, `MessageDetail.tsx`) to use camelCase. Document the
 chosen convention in `CLAUDE.md`.
 
-### B-009 — `send_email_reply` post-send store re-lock propagates mutex-poisoning errors
-
-**Severity:** Low  **Discovered:** Plan 7b.3 spec review (2026-04-22)
-
-`desktop/src-tauri/src/commands.rs::send_email_reply` uses `?` on the
-post-send `state.store.lock()` call. If the mutex is poisoned (another
-thread panicked while holding it), the command returns `Err` instead of
-`Ok(())` — but the spec says "log but return Ok, the email already
-left." Low-probability path (requires a panic in a lock-holding
-thread).
-
-Proposed fix: match on the `lock()` result and log-then-swallow on
-poisoning, same as the inner `delete_reply_draft` failure path
-already does.
-
 ---
 
 ## Resolved
+
+### B-009 — `send_email_reply` post-send lock poisoning — **Fixed (2026-04-24)**
+
+`send_email_reply` used `?` on the post-send `store.lock()`, so a
+poisoned mutex turned a successful send into a caller-visible error —
+exactly the opposite of the spec's "log but return Ok, the email
+already left" contract. Replaced with a `match` that log-and-swallows
+on both poisoning and `delete_reply_draft` failures. Pure code-path
+fix; no test because the poisoning path requires panicking in a
+lock-holding thread, and the only interesting observable is "no
+error returned from send" which is already covered by the existing
+happy-path tests.
 
 ### B-007 — `stable_channel_id` duplicated — **Fixed (2026-04-24)**
 
